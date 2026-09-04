@@ -388,6 +388,9 @@
   // MARK: - Feste Knoepfe
 
   $("item-unit").replaceChildren(...Array.from(unitSelect("Stk").options));
+  // Beim Umhaengen der Optionen geht die Vorauswahl verloren - ausdruecklich
+  // auf Stueck stellen, sonst steht die letzte Einheit im Feld.
+  $("item-unit").value = "Stk";
   $("add-item").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const name = $("item-name").value.trim();
