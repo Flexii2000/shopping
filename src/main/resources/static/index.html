@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einkaufsliste</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- Fuers "Zum Home-Bildschirm" auf dem iPhone. -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Einkaufsliste</h1>
+    <span class="stamp" id="me"></span>
+  </header>
+  <p class="banner" id="banner" hidden></p>
+  <section class="noaccess" id="noaccess" hidden>
+    <strong>Kein Zugang.</strong> Bitte den Link mit Token öffnen
+    (<code>…/shopping-list/setup?token=…</code>) – einmal je Gerät, danach ist die Liste einfach da.
+  </section>
+  <main id="main" hidden>
+    <section class="card">
+      <h2>Liste <span class="count" id="open-count"></span>
+        <span class="tools"><button class="x" id="clear" type="button" hidden>Abgehakte entfernen</button></span>
+      </h2>
+      <form class="add" id="add-item" autocomplete="off">
+        <input id="item-name" placeholder="Neuer Eintrag" maxlength="200" required>
+        <input id="item-qty" class="qty" placeholder="Menge" maxlength="40">
+        <button type="submit">+</button>
+      </form>
+      <ul class="items" id="items"></ul>
+      <p class="empty" id="items-empty" hidden>Nichts auf der Liste.</p>
+    </section>
+
+    <section class="card">
+      <h2>Gerichte <span class="count" id="dish-count"></span>
+        <span class="tools"><button class="x" id="new-dish" type="button">+ Gericht</button></span>
+      </h2>
+      <p class="hint">Ein Gericht kommt als Ganzes auf die Liste – je Zutat ein Eintrag.</p>
+      <div class="tiles" id="dishes"></div>
+      <div id="dish-editor"></div>
+    </section>
+
+    <section class="card">
+      <h2>Regelmäßig <span class="count" id="rule-count"></span>
+        <span class="tools"><button class="x" id="new-rule" type="button">+ Regel</button></span>
+      </h2>
+      <p class="hint">Setzt sich von selbst auf die Liste, z. B. Klopapier alle 14 Tage. Der Rhythmus zählt ab dem Abhaken.</p>
+      <ul class="rules" id="rules"></ul>
+      <div id="rule-editor"></div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+/* Dieselbe Farbwelt wie To-Do und Notenuebersicht - die Seiten sollen sich
+   wie eine Familie anfuehlen. Akzent hier gruen: die Liste gehoert zur
+   Healthy-Welt (Essen, Gewicht, Einkauf). */
+:root { color-scheme: light;
+  --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e;
+  --muted:#898781; --grid:#e1e0d9; --ring:rgba(11,11,11,.10);
+  --accent:#2e9e5b; --danger:#c0392b; }
+@media (prefers-color-scheme: dark) { :root {
+  color-scheme: dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink-2:#c3c2b7;
+  --muted:#898781; --grid:#2c2c2a; --ring:rgba(255,255,255,.10);
+  --accent:#4cc27a; --danger:#e06c5c; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--plane); color:var(--ink);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+.wrap { max-width:46rem; margin:0 auto; padding:1.5rem clamp(1rem,2.5vw,2rem) 4rem; }
+header { display:flex; justify-content:space-between; align-items:baseline; gap:1rem;
+  flex-wrap:wrap; margin-bottom:1.25rem; }
+h1 { font-size:1.35rem; margin:0; letter-spacing:-.01em; }
+.stamp { color:var(--muted); font-size:.8125rem; }
+.banner { background:rgba(192,57,43,.12); color:var(--danger); border-radius:.5rem;
+  padding:.6rem .9rem; font-size:.875rem; margin:0 0 1rem; }
+.noaccess { background:var(--surface); border:1px solid var(--ring); border-radius:.75rem;
+  padding:1rem 1.1rem; font-size:.9375rem; }
+.noaccess code { font-size:.8125rem; }
+
+main { display:flex; flex-direction:column; gap:1rem; }
+.card { background:var(--surface); border:1px solid var(--ring); border-radius:.75rem;
+  padding:1rem 1.1rem; min-width:0; display:flex; flex-direction:column; gap:.6rem; }
+.card h2 { font-size:.8125rem; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); margin:0; font-weight:600; display:flex; align-items:center; gap:.5rem; }
+.card h2 .count { color:var(--ink-2); font-weight:500; text-transform:none; letter-spacing:0; }
+.card h2 .tools { margin-left:auto; display:flex; gap:.25rem; text-transform:none; letter-spacing:0; }
+.hint { color:var(--muted); font-size:.8125rem; margin:0; }
+.empty { color:var(--muted); font-size:.875rem; margin:0; }
+
+/* Die Liste */
+ul.items, ul.rules { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.15rem; }
+li.item { display:flex; align-items:flex-start; gap:.55rem; padding:.3rem 0; min-width:0; flex-wrap:wrap; }
+li.item input[type=checkbox] { width:1.15rem; height:1.15rem; margin:.2rem 0 0; flex:none;
+  accent-color:var(--accent); }
+li.item .title { flex:1 1 11rem; min-width:0; overflow-wrap:anywhere; cursor:pointer; }
+li.item .qty { color:var(--ink-2); margin-left:.4rem; white-space:nowrap; }
+li.item .icon { margin-right:.4rem; }
+li.item.checked .icon { opacity:.5; }
+.editor select { font:inherit; padding:.3rem .45rem; border:1px solid var(--ring); border-radius:.35rem;
+  background:var(--surface); color:var(--ink); }
+li.item .meta { display:block; color:var(--muted); font-size:.75rem; }
+li.item.checked .title { text-decoration:line-through; color:var(--muted); }
+li.item.checked .qty { color:var(--muted); }
+li.item .actions { margin-left:auto; display:flex; gap:.2rem; align-items:center; }
+.x { border:0; background:none; color:var(--muted); cursor:pointer; font:inherit; font-size:.8125rem;
+  padding:.1rem .35rem; border-radius:.35rem; flex:none; }
+.x:hover { color:var(--ink); background:var(--grid); }
+.x.del:hover { color:var(--danger); }
+
+form.add { display:flex; gap:.5rem; margin-top:.3rem; }
+form.add input { flex:1; min-width:0; font:inherit; font-size:.9375rem; padding:.45rem .6rem;
+  border:1px solid var(--ring); border-radius:.5rem; background:var(--plane); color:var(--ink); }
+form.add input.qty { flex:0 1 6rem; }
+form.add button { font:inherit; font-size:.875rem; padding:.45rem .8rem; border:0;
+  border-radius:.5rem; background:var(--accent); color:#fff; cursor:pointer; }
+
+/* Das Feld zum Aendern eines Eintrags, unter der Zeile */
+.editor { margin:.1rem 0 .4rem 1.75rem; padding:.55rem .7rem; border:1px solid var(--ring);
+  border-radius:.5rem; background:var(--plane); display:flex; flex-direction:column; gap:.4rem;
+  font-size:.8125rem; }
+.editor.top { margin-left:0; }
+.editor .row { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+.editor .lbl { color:var(--muted); min-width:4.5rem; }
+.editor input { font:inherit; padding:.3rem .45rem; border:1px solid var(--ring); border-radius:.35rem;
+  background:var(--surface); color:var(--ink); min-width:0; }
+.editor input.grow { flex:1 1 8rem; }
+.editor input.qty { flex:0 1 6rem; }
+.editor input.num { width:4.5rem; }
+.editor .mini { font:inherit; font-size:.75rem; padding:.3rem .6rem; border:0; border-radius:.35rem;
+  background:var(--accent); color:#fff; cursor:pointer; }
+.editor .mini.quiet { background:var(--grid); color:var(--ink-2); }
+
+/* Gerichte als Kacheln */
+.tiles { display:grid; gap:.6rem; grid-template-columns:repeat(auto-fill, minmax(11rem, 1fr)); }
+.tile { border:1px solid var(--ring); border-radius:.6rem; padding:.6rem .75rem; background:var(--plane);
+  display:flex; flex-direction:column; gap:.3rem; min-width:0; }
+.tile .name { font-weight:600; overflow-wrap:anywhere; }
+.tile .sub { color:var(--muted); font-size:.75rem; }
+.tile .row { display:flex; gap:.25rem; align-items:center; margin-top:.15rem; }
+.tile .mini { font:inherit; font-size:.75rem; padding:.3rem .6rem; border:0; border-radius:.35rem;
+  background:var(--accent); color:#fff; cursor:pointer; }
+
+/* Regeln */
+li.rule { display:flex; align-items:baseline; gap:.5rem; padding:.3rem 0; flex-wrap:wrap; }
+li.rule .name { flex:1 1 10rem; min-width:0; overflow-wrap:anywhere; }
+li.rule .qty { color:var(--ink-2); margin-left:.4rem; }
+li.rule .when { color:var(--muted); font-size:.8125rem; white-space:nowrap; }
+li.rule .when.due { color:var(--accent); font-weight:600; }
+li.rule .actions { margin-left:auto; display:flex; gap:.2rem; }

@@ -1,0 +1,11 @@
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.idea
+*.iml
+out/
+.vscode/
+.DS_Store
+
+# Live-Daten: entsteht zur Laufzeit, gehoert nicht ins Repo.
+data/shopping.json

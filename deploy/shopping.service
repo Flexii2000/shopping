@@ -1,0 +1,32 @@
+# systemd-Unit fuer die Einkaufsliste (fherrmann.com/shopping-list).
+#
+# Installiert deploy/setup-shopping.sh. Von Hand:
+#   sudo cp deploy/shopping.service /etc/systemd/system/shopping.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now shopping
+#
+# Die Token stehen in /etc/shopping.env (siehe EnvironmentFile), lesbar nur
+# fuer root und den Dienstnutzer - nirgends im Repo.
+
+[Unit]
+Description=Einkaufsliste (fherrmann.com/shopping-list)
+After=network.target
+
+[Service]
+User=shopping
+Group=shopping
+WorkingDirectory=/opt/shopping
+EnvironmentFile=/etc/shopping.env
+# Absoluter Pfad: das JDK liegt unter /opt/java und ist nicht im PATH eines
+# systemd-Dienstes (wie bei todo.service).
+ExecStart=/opt/java/jdk-25.0.1+8/bin/java -jar /opt/shopping/app.jar
+Restart=on-failure
+RestartSec=5
+
+# Der Dienst braucht nichts ausser seinem Datenverzeichnis.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/shopping/data
+
+[Install]
+WantedBy=multi-user.target
