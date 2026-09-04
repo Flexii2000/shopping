@@ -88,6 +88,7 @@ class ShoppingControllerTest {
                 .andExpect(jsonPath("$.categories[0].label").value("Obst & Gemüse"))
                 .andExpect(jsonPath("$.categories[0].emoji").value("🥦"))
                 .andExpect(jsonPath("$.categories[0].symbol").value("carrot"))
+                .andExpect(jsonPath("$.categories[0].color").value("#34A853"))
                 .andExpect(jsonPath("$.categories[12].key").value("other"));
         mockMvc.perform(get("/api/board").cookie(new Cookie("shopping_token", "token-freundin-2")))
                 .andExpect(status().isOk())

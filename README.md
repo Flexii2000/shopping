@@ -87,7 +87,7 @@ das ganze Brett** (`Board`); die Clients setzen nichts zusammen.
 
 ```
 Board    me, items[], dishes[], recurring[], categories[]
-Category key, label, emoji, symbol            (in Sortierreihenfolge)
+Category key, label, emoji, symbol, color     (in Sortierreihenfolge; color als #RRGGBB)
 Item     id, name, quantity | null, note | null, category, addedAt, addedBy,
          checkedAt | null, checkedBy | null, dishId | null, ruleId | null
 Dish     id, name, ingredients[] {name, quantity | null}, createdAt

@@ -108,6 +108,53 @@
     return board.categories.find((c) => c.key === key) || board.categories[board.categories.length - 1];
   }
 
+  // MARK: - Mengen: Zahl und Einheit
+
+  // Der Dienst speichert die Menge als Text ("500 g", "2 Stk"). Hier wird sie
+  // in Zahl und Einheit auseinandergelesen und genauso zurueckgeschrieben; eine
+  // Zahl ohne Einheit heisst Stueck. Was sich nicht lesen laesst ("eine
+  // Handvoll"), bleibt Text. Dieselben Regeln wie ShoppingQuantity in der App.
+  const UNITS = ["Stk", "g", "kg", "ml", "l", "Pck"];
+  const UNIT_NAMES = { "": "Stk", stk: "Stk", "stück": "Stk", stueck: "Stk", st: "Stk", x: "Stk", stck: "Stk",
+    g: "g", gr: "g", gramm: "g", kg: "kg", kilo: "kg", kilogramm: "kg", ml: "ml", milliliter: "ml",
+    l: "l", liter: "l", ltr: "l", pck: "Pck", pk: "Pck", pkg: "Pck", pack: "Pck", packung: "Pck" };
+
+  function parseQuantity(text) {
+    const m = /^(\d+(?:[.,]\d+)?)\s*([A-Za-zÄÖÜäöü.]*)$/.exec((text || "").trim());
+    if (!m) return null;
+    const unit = UNIT_NAMES[m[2].toLowerCase().replace(/\./g, "")];
+    return unit ? { amount: m[1], unit } : null;
+  }
+
+  function composeQuantity(field, unit) {
+    const text = (field || "").trim();
+    if (!text) return null;
+    const parsed = parseQuantity(text);
+    if (!parsed) return text;
+    return parsed.amount + " " + (/[A-Za-zÄÖÜäöü]/.test(text) ? parsed.unit : unit);
+  }
+
+  function unitSelect(selected) {
+    const select = el("select", "unit");
+    select.title = "Einheit";
+    for (const u of UNITS) {
+      const opt = el("option", null, u);
+      opt.value = u;
+      opt.selected = u === selected;
+      select.append(opt);
+    }
+    return select;
+  }
+
+  // Ein Mengenfeld: schmale Zahl plus Einheit. `read()` liefert den Text fuer
+  // den Dienst.
+  function quantityField(existing) {
+    const parsed = parseQuantity(existing);
+    const num = input("qty", "Menge", parsed ? parsed.amount : (existing || ""), { maxLength: 40, inputMode: "decimal" });
+    const unit = unitSelect(parsed ? parsed.unit : "Stk");
+    return { num, unit, read: () => composeQuantity(num.value, unit.value) };
+  }
+
   function itemRow(item) {
     const li = el("li", "item" + (item.checkedAt ? " checked" : ""));
     const box = el("input");
@@ -121,6 +168,12 @@
     const cat = category(item.category);
     const icon = el("span", "icon", cat.emoji);
     icon.title = cat.label;
+    // Die Farbe der Kategorie als Kreis hinter dem Emoji - so sind die
+    // Gruppen auch ohne Abschnitte auf einen Blick zu unterscheiden.
+    if (cat.color) {
+      icon.style.background = cat.color + "2E";
+      icon.style.boxShadow = "inset 0 0 0 1.5px " + cat.color + "80";
+    }
     const title = el("span", "title", item.name);
     title.prepend(icon);
     if (item.quantity) title.append(el("span", "qty", item.quantity));
@@ -147,9 +200,9 @@
     const box = el("div", "editor");
     const row = el("div", "row");
     const name = input("grow", "Name", item.name, { maxLength: 200 });
-    const qty = input("qty", "Menge", item.quantity, { maxLength: 40 });
+    const qty = quantityField(item.quantity);
     const note = input("grow", "Notiz", item.note, { maxLength: 200 });
-    row.append(name, qty, note);
+    row.append(name, qty.num, qty.unit, note);
     // Die Kategorie von Hand setzen - der Dienst merkt sich das fuer den
     // Namen. Leer lassen heisst: neu raten lassen.
     const catRow = el("div", "row");
@@ -167,7 +220,7 @@
     buttons.append(
       button("mini", "Speichern", () => {
         editing = null;
-        run("PUT", "items/" + item.id, { name: name.value, quantity: qty.value, note: note.value,
+        run("PUT", "items/" + item.id, { name: name.value, quantity: qty.read(), note: note.value,
           category: touched ? select.value : null });
       }),
       button("mini quiet", "Abbrechen", () => { editing = null; render(board); }));
@@ -222,11 +275,11 @@
     function addLine(ing) {
       const row = el("div", "row");
       const n = input("grow", "Zutat", ing ? ing.name : "", { maxLength: 200 });
-      const q = input("qty", "Menge", ing ? ing.quantity : "", { maxLength: 40 });
+      const q = quantityField(ing ? ing.quantity : "");
       const rm = button("x del", "×", () => { rows.removeChild(row); lines.splice(lines.indexOf(line), 1); ensureEmpty(); }, "Zutat entfernen");
       const line = { n, q };
       lines.push(line);
-      row.append(n, q, rm);
+      row.append(n, q.num, q.unit, rm);
       rows.append(row);
       n.addEventListener("input", ensureEmpty);
     }
@@ -240,7 +293,7 @@
       button("mini", "Speichern", () => {
         const ingredients = lines
           .filter((l) => l.n.value.trim())
-          .map((l) => ({ name: l.n.value, quantity: l.q.value }));
+          .map((l) => ({ name: l.n.value, quantity: l.q.read() }));
         editing = null;
         if (dish) run("PUT", "dishes/" + dish.id, { name: name.value, ingredients });
         else run("POST", "dishes", { name: name.value, ingredients });
@@ -288,8 +341,8 @@
     const box = el("div", "editor top");
     const r1 = el("div", "row");
     const name = input("grow", "Was", rule ? rule.name : "", { maxLength: 200 });
-    const qty = input("qty", "Menge", rule ? rule.quantity : "", { maxLength: 40 });
-    r1.append(el("span", "lbl", rule ? "Regel" : "Neu"), name, qty);
+    const qty = quantityField(rule ? rule.quantity : "");
+    r1.append(el("span", "lbl", rule ? "Regel" : "Neu"), name, qty.num, qty.unit);
     const r2 = el("div", "row");
     const every = input("num", "14", rule ? rule.everyDays : 14, { type: "number", min: 1, max: 365 });
     const next = input("", "", rule ? rule.nextAt : today(), { type: "date" });
@@ -297,7 +350,7 @@
     const buttons = el("div", "row");
     buttons.append(
       button("mini", "Speichern", () => {
-        const body = { name: name.value, quantity: qty.value, everyDays: Number(every.value), nextAt: next.value || null };
+        const body = { name: name.value, quantity: qty.read(), everyDays: Number(every.value), nextAt: next.value || null };
         editing = null;
         if (rule) run("PUT", "recurring/" + rule.id, body);
         else run("POST", "recurring", body);
@@ -334,14 +387,16 @@
 
   // MARK: - Feste Knoepfe
 
+  $("item-unit").replaceChildren(...Array.from(unitSelect("Stk").options));
   $("add-item").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const name = $("item-name").value.trim();
     if (!name) return;
-    const quantity = $("item-qty").value.trim();
+    const quantity = composeQuantity($("item-qty").value, $("item-unit").value);
     $("item-name").value = "";
     $("item-qty").value = "";
-    run("POST", "items", { name, quantity: quantity || null });
+    $("item-unit").value = "Stk";
+    run("POST", "items", { name, quantity });
   });
   $("clear").addEventListener("click", () => run("POST", "items/clear-checked"));
   $("new-dish").addEventListener("click", () => { editing = { kind: "dish", id: null }; render(board); });

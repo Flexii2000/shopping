@@ -113,6 +113,7 @@ class ShoppingServiceTest {
         assertEquals("other", board.categories().get(board.categories().size() - 1).key());
         assertEquals("🥦", board.categories().get(0).emoji());
         assertEquals("carrot", board.categories().get(0).symbol());
+        assertEquals("#34A853", board.categories().get(0).color());
     }
 
     @Test

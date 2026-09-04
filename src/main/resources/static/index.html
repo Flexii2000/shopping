@@ -27,7 +27,8 @@
       </h2>
       <form class="add" id="add-item" autocomplete="off">
         <input id="item-name" placeholder="Neuer Eintrag" maxlength="200" required>
-        <input id="item-qty" class="qty" placeholder="Menge" maxlength="40">
+        <input id="item-qty" class="qty" placeholder="Menge" maxlength="40" inputmode="decimal">
+        <select id="item-unit" class="unit" title="Einheit"></select>
         <button type="submit">+</button>
       </form>
       <ul class="items" id="items"></ul>

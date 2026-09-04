@@ -9,35 +9,38 @@ import java.util.Optional;
  * und Haushalt am Ende.
  *
  * <p>Der Schluessel ({@link #key}) steht in der Datei und in den Antworten;
- * Beschriftung, Emoji (Web) und SF-Symbol (App) liefert das Brett mit, damit
+ * Beschriftung, Emoji (Web), SF-Symbol (App) und Farbe liefert das Brett mit, damit
  * kein Client die Reihenfolge oder die Namen hart codieren muss.
  */
 public enum Category {
 
-    PRODUCE("produce", "Obst & Gemüse", "🥦", "carrot"),
-    BAKERY("bakery", "Backwaren", "🍞", "birthday.cake"),
-    MEAT("meat", "Fleisch & Fisch", "🥩", "fish"),
-    DAIRY("dairy", "Milchprodukte", "🧀", "mug"),
-    CANNED("canned", "Konserven", "🥫", "cylinder"),
-    STAPLES("staples", "Vorrat & Trockenwaren", "🍝", "cabinet"),
-    SPICES("spices", "Gewürze & Saucen", "🧂", "leaf"),
-    SNACKS("snacks", "Snacks & Süßes", "🍫", "popcorn"),
-    BEVERAGES("beverages", "Getränke", "🧃", "waterbottle"),
-    FROZEN("frozen", "Tiefkühl", "🧊", "snowflake"),
-    DRUGSTORE("drugstore", "Drogerie", "🧴", "comb"),
-    HOUSEHOLD("household", "Haushalt", "🧻", "bubbles.and.sparkles"),
-    OTHER("other", "Sonstiges", "🛒", "tag");
+    PRODUCE("produce", "Obst & Gemüse", "🥦", "carrot", "#34A853"),
+    BAKERY("bakery", "Backwaren", "🍞", "birthday.cake", "#C98B3A"),
+    MEAT("meat", "Fleisch & Fisch", "🥩", "fish", "#D9483B"),
+    DAIRY("dairy", "Milchprodukte", "🧀", "mug", "#3B82F6"),
+    CANNED("canned", "Konserven", "🥫", "cylinder", "#7F8C9A"),
+    STAPLES("staples", "Vorrat & Trockenwaren", "🍝", "cabinet", "#D89A00"),
+    SPICES("spices", "Gewürze & Saucen", "🧂", "leaf", "#9B59B6"),
+    SNACKS("snacks", "Snacks & Süßes", "🍫", "popcorn", "#E91E63"),
+    BEVERAGES("beverages", "Getränke", "🧃", "waterbottle", "#0EA5E9"),
+    FROZEN("frozen", "Tiefkühl", "🧊", "snowflake", "#60A5FA"),
+    DRUGSTORE("drugstore", "Drogerie", "🧴", "comb", "#8B5CF6"),
+    HOUSEHOLD("household", "Haushalt", "🧻", "bubbles.and.sparkles", "#14B8A6"),
+    OTHER("other", "Sonstiges", "🛒", "tag", "#9CA3AF");
 
     private final String key;
     private final String label;
     private final String emoji;
     private final String symbol;
+    /** Als {@code #RRGGBB} - dieselbe Farbe im Web und in der App, damit die Kategorien auf einen Blick auseinanderzuhalten sind. */
+    private final String color;
 
-    Category(String key, String label, String emoji, String symbol) {
+    Category(String key, String label, String emoji, String symbol, String color) {
         this.key = key;
         this.label = label;
         this.emoji = emoji;
         this.symbol = symbol;
+        this.color = color;
     }
 
     public String key() {
@@ -54,6 +57,10 @@ public enum Category {
 
     public String symbol() {
         return symbol;
+    }
+
+    public String color() {
+        return color;
     }
 
     public static Optional<Category> fromKey(String key) {

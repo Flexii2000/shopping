@@ -41,7 +41,8 @@ li.item input[type=checkbox] { width:1.15rem; height:1.15rem; margin:.2rem 0 0; 
   accent-color:var(--accent); }
 li.item .title { flex:1 1 11rem; min-width:0; overflow-wrap:anywhere; cursor:pointer; }
 li.item .qty { color:var(--ink-2); margin-left:.4rem; white-space:nowrap; }
-li.item .icon { margin-right:.4rem; }
+li.item .icon { margin-right:.45rem; display:inline-flex; align-items:center; justify-content:center;
+  width:1.7rem; height:1.7rem; border-radius:50%; font-size:.95rem; vertical-align:-.35rem; }
 li.item.checked .icon { opacity:.5; }
 .editor select { font:inherit; padding:.3rem .45rem; border:1px solid var(--ring); border-radius:.35rem;
   background:var(--surface); color:var(--ink); }
@@ -94,3 +95,8 @@ li.rule .qty { color:var(--ink-2); margin-left:.4rem; }
 li.rule .when { color:var(--muted); font-size:.8125rem; white-space:nowrap; }
 li.rule .when.due { color:var(--accent); font-weight:600; }
 li.rule .actions { margin-left:auto; display:flex; gap:.2rem; }
+
+/* Einheit neben der Menge: schmal, gleiche Hoehe wie die Felder. */
+select.unit { font:inherit; font-size:.9375rem; padding:.4rem .3rem; border:1px solid var(--line, #444);
+  border-radius:.5rem; background:transparent; color:inherit; flex:0 0 auto; max-width:4.6rem; }
+form.add input.qty, .editor input.qty { flex:0 1 4.2rem; min-width:3.2rem; }

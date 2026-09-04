@@ -30,10 +30,10 @@ public record Board(String me, List<Item> items, List<Dish> dishes, List<Recurri
         this(me, items, dishes, recurring, CATEGORIES);
     }
 
-    public record CategoryView(String key, String label, String emoji, String symbol) {
+    public record CategoryView(String key, String label, String emoji, String symbol, String color) {
     }
 
     public static final List<CategoryView> CATEGORIES = Arrays.stream(Category.values())
-            .map(c -> new CategoryView(c.key(), c.label(), c.emoji(), c.symbol()))
+            .map(c -> new CategoryView(c.key(), c.label(), c.emoji(), c.symbol(), c.color()))
             .toList();
 }
