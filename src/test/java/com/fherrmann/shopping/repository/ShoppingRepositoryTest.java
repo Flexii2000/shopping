@@ -40,7 +40,7 @@ class ShoppingRepositoryTest {
         ShoppingRepository repository = new ShoppingRepository(file.toString(), MAPPER);
         ShoppingData data = new ShoppingData(
                 List.of(new Item("i1", "Milch", "2", null, "dairy", NOW, "felix", null, null, null, null),
-                        new Item("i2", "Zwiebeln", "500 g", "Bolognese", "produce", NOW, "freundin", NOW, "felix", "d1", null),
+                        new Item("i2", "Zwiebeln", "500 g", "Bolognese", "produce", NOW, "joana", NOW, "felix", "d1", null),
                         new Item("i3", "Klopapier", null, null, "household", NOW, "regel", null, null, null, "r1")),
                 List.of(new Dish("d1", "Bolognese", List.of(new Ingredient("Zwiebeln", "500 g")), NOW)),
                 List.of(new RecurringRule("r1", "Klopapier", null, 14, LocalDate.of(2026, 9, 17), NOW)),

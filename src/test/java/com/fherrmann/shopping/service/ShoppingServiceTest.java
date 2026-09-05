@@ -95,8 +95,8 @@ class ShoppingServiceTest {
         assertEquals("felix", milch.addedBy());
         assertNull(milch.checkedAt());
 
-        board = service.check("freundin", milch.id());
-        assertEquals("freundin", board.items().get(0).checkedBy());
+        board = service.check("joana", milch.id());
+        assertEquals("joana", board.items().get(0).checkedBy());
         assertEquals(NOW, board.items().get(0).checkedAt());
 
         // 23:59 in Berlin: noch da.
@@ -112,7 +112,7 @@ class ShoppingServiceTest {
     void abhakenIstIdempotentUndDerErsteZaehlt() {
         String id = service.createItem("felix", new ItemRequest("Brot", null, null, null)).items().get(0).id();
         service.check("felix", id);
-        Board again = at(NOW.plus(Duration.ofHours(1))).check("freundin", id);
+        Board again = at(NOW.plus(Duration.ofHours(1))).check("joana", id);
         assertEquals("felix", again.items().get(0).checkedBy(), "der zweite Haken aendert nichts");
         assertEquals(NOW, again.items().get(0).checkedAt());
 
@@ -197,7 +197,7 @@ class ShoppingServiceTest {
 
         // Abhaken nach drei Tagen: der Rhythmus zaehlt ab dem Kauf.
         ShoppingService threeDays = at(NOW.plus(Duration.ofDays(3)));
-        Board checked = threeDays.check("freundin", klopapier.id());
+        Board checked = threeDays.check("joana", klopapier.id());
         assertEquals(LocalDate.of(2026, 9, 20), checked.recurring().get(0).nextAt());
 
         // Am Faelligkeitstag kommt ein neuer Eintrag.
@@ -278,7 +278,7 @@ class ShoppingServiceTest {
     void aendernBehaeltUrheberUndHaken() {
         Board board = service.createItem("felix", new ItemRequest("Milch", "1", null, null));
         String id = board.items().get(0).id();
-        service.check("freundin", id);
+        service.check("joana", id);
         board = service.updateItem("felix", id, new ItemRequest("Hafermilch", null, "vegan", null));
         Item item = board.items().get(0);
         assertEquals("Hafermilch", item.name());
@@ -286,6 +286,6 @@ class ShoppingServiceTest {
         assertEquals("vegan", item.note());
         assertEquals("felix", item.addedBy());
         assertNotNull(item.checkedAt());
-        assertEquals("freundin", item.checkedBy());
+        assertEquals("joana", item.checkedBy());
     }
 }

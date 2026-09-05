@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest({ShoppingController.class, SetupController.class})
 @Import({SecurityConfig.class, PlainTextErrors.class, TokenRegistry.class})
-@TestPropertySource(properties = "shopping.tokens=felix:token-felix-1,freundin:token-freundin-2")
+@TestPropertySource(properties = "shopping.tokens=felix:token-felix-1,joana:token-joana-2")
 class ShoppingControllerTest {
 
     @Autowired
@@ -77,7 +77,7 @@ class ShoppingControllerTest {
     @Test
     void bearerUndCookieGehenUndDerNameKommtMit() throws Exception {
         when(service.board("felix")).thenReturn(board("felix"));
-        when(service.board("freundin")).thenReturn(board("freundin"));
+        when(service.board("joana")).thenReturn(board("joana"));
         mockMvc.perform(get("/api/board").header("Authorization", "Bearer token-felix-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.me").value("felix"))
@@ -90,19 +90,19 @@ class ShoppingControllerTest {
                 .andExpect(jsonPath("$.categories[0].symbol").value("carrot"))
                 .andExpect(jsonPath("$.categories[0].color").value("#34A853"))
                 .andExpect(jsonPath("$.categories[13].key").value("other"));
-        mockMvc.perform(get("/api/board").cookie(new Cookie("shopping_token", "token-freundin-2")))
+        mockMvc.perform(get("/api/board").cookie(new Cookie("shopping_token", "token-joana-2")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.me").value("freundin"));
+                .andExpect(jsonPath("$.me").value("joana"));
     }
 
     @Test
     void werAnlegtStehtAlsUrheberDa() throws Exception {
-        when(service.createItem(eq("freundin"), any())).thenReturn(board("freundin"));
-        mockMvc.perform(post("/api/items").header("Authorization", "Bearer token-freundin-2")
+        when(service.createItem(eq("joana"), any())).thenReturn(board("joana"));
+        mockMvc.perform(post("/api/items").header("Authorization", "Bearer token-joana-2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Milch\",\"quantity\":\"2\",\"category\":\"dairy\"}"))
                 .andExpect(status().isCreated());
-        verify(service).createItem(eq("freundin"), eq(new ItemRequest("Milch", "2", null, "dairy")));
+        verify(service).createItem(eq("joana"), eq(new ItemRequest("Milch", "2", null, "dairy")));
     }
 
     @Test

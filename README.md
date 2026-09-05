@@ -14,10 +14,10 @@ genau die Einkaufsliste bedienen können — und sonst nichts. Deshalb prüft de
 Dienst eigene Token aus `/etc/shopping.env`:
 
 ```
-SHOPPING_TOKENS=felix:<token>,freundin:<token>
+SHOPPING_TOKENS=felix:<token>,joana:<token>
 ```
 
-Der Name vor dem Token steht an den Einträgen („abgehakt von freundin"). Die
+Der Name vor dem Token steht an den Einträgen („abgehakt von joana"). Die
 Token erzeugt `deploy/setup-shopping.sh` beim ersten Lauf und gibt die Links
 aus. Zwei Wege, ihn mitzuschicken:
 

@@ -15,7 +15,7 @@ import java.util.Optional;
  * <p>Absichtlich nicht der Privat-Token von fherrmann.com. Der oeffnet alles
  * Private auf einmal; hier soll eine zweite Person genau die Einkaufsliste
  * bedienen koennen - und sonst nichts. Form in der Umgebung:
- * {@code SHOPPING_TOKENS=felix:…,freundin:…}.
+ * {@code SHOPPING_TOKENS=felix:…,joana:…}.
  */
 @Component
 public class TokenRegistry {

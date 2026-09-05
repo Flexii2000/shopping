@@ -27,7 +27,7 @@ PORT=48220
 JAVA="/opt/java/jdk-25.0.1+8/bin/java"
 ENV_FILE="/etc/shopping.env"
 NGINX_CONF="/etc/nginx/sites-available/fherrmann.com"
-PEOPLE=(felix freundin)
+PEOPLE=(felix joana)
 
 step() { echo; echo "=== $* ==="; }
 fail() { echo "FEHLER: $*" >&2; exit 1; }

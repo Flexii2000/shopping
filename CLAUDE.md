@@ -1,6 +1,6 @@
 # Arbeitsregeln für `shopping`
 
-Ein Spring-Boot-Dienst für die Einkaufsliste von Felix und seiner Freundin:
+Ein Spring-Boot-Dienst für die Einkaufsliste von Felix und Joana:
 eine Liste, Gerichte mit Zutaten, Regeln für Dinge, die sich von selbst auf
 die Liste setzen. Läuft als `fherrmann.com/shopping-list` — **nicht** im
 privaten Bereich, sondern mit **eigenen Token je Person**. Clients: die
