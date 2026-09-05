@@ -71,6 +71,23 @@ class ShoppingServiceTest {
     }
 
     @Test
+    void dosenUndGlaeserSindKonservenAusserJemandHatEsAndersGelernt() {
+        Board board = service.createItem("felix", new ItemRequest("Tomaten 3 Dosen", null, null, null));
+        Item tomaten = board.items().get(0);
+        assertEquals("Tomaten", tomaten.name());
+        assertEquals("3 Dosen", tomaten.quantity());
+        assertEquals("canned", tomaten.category());
+
+        board = service.createItem("felix", new ItemRequest("Gurken", "1 Glas", null, null));
+        assertEquals("canned", board.items().stream().filter(i -> i.name().equals("Gurken")).findFirst().orElseThrow().category());
+
+        // Von Hand gesetzt schlaegt die Verpackung.
+        service.updateItem("felix", tomaten.id(), new ItemRequest("Tomaten", "3 Dosen", null, "produce"));
+        board = service.createItem("felix", new ItemRequest("Tomaten 2 Dosen", null, null, null));
+        assertEquals("produce", board.items().stream().filter(i -> "2 Dosen".equals(i.quantity())).findFirst().orElseThrow().category());
+    }
+
+    @Test
     void abgehaktBleibtBisMitternachtSichtbarUndDannNurInDerDatei() {
         Board board = service.createItem("felix", new ItemRequest("Milch", "2", null, null));
         assertEquals("felix", board.me());

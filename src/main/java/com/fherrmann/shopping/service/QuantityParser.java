@@ -168,6 +168,20 @@ public final class QuantityParser {
         return new Split(plain, null);
     }
 
+    /**
+     * Ob die Menge in Dosen oder Glaesern zaehlt - dann gehoert der Eintrag zu
+     * den Konserven, egal was drin ist: "Tomaten 3 Dosen" liegen nicht beim
+     * Gemuese.
+     */
+    public static boolean isCanOrJar(String quantity) {
+        if (quantity == null) {
+            return false;
+        }
+        List<String> tokens = words(quantity);
+        Phrase phrase = tokens.isEmpty() ? null : phrase(tokens, 0);
+        return phrase != null && (phrase.quantity().unit().equals("Dose") || phrase.quantity().unit().equals("Glas"));
+    }
+
     /** "500g" wird "500 g", "2" wird "2 Stk", "drei Dosen" wird "3 Dosen"; was sich nicht lesen laesst, bleibt. */
     static String normalize(String quantity) {
         String trimmed = quantity.strip();

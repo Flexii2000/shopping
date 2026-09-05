@@ -123,7 +123,7 @@ public class ShoppingService {
         ShoppingData data = learn(repository.load(), name, request.category());
         List<Item> items = new ArrayList<>(data.items());
         items.add(new Item(ShoppingRepository.newId(), name, split.quantity(), clean(request.note()),
-                categorize(data, name), Instant.now(clock), me, null, null, null, null));
+                categorize(data, name, split.quantity()), Instant.now(clock), me, null, null, null, null));
         return save(data.withItems(items), me);
     }
 
@@ -135,7 +135,7 @@ public class ShoppingService {
         String name = split.name();
         ShoppingData data = learn(repository.load(), name, request.category());
         findItem(data, id);
-        String category = categorize(data, name);
+        String category = categorize(data, name, split.quantity());
         return save(data.withItems(data.items().stream()
                 .map(i -> i.id().equals(id) ? i.withText(name, split.quantity(), clean(request.note()), category) : i)
                 .toList()), me);
@@ -157,7 +157,19 @@ public class ShoppingService {
         return data.withLearned(learned);
     }
 
-    private String categorize(ShoppingData data, String name) {
+    /**
+     * Gelerntes zuerst, dann die Verpackung, dann das Woerterbuch: was in
+     * Dosen oder Glaesern zaehlt, steht bei den Konserven - "Tomaten 3 Dosen"
+     * liegen nicht beim Gemuese.
+     */
+    private String categorize(ShoppingData data, String name, String quantity) {
+        String learned = data.learned().get(Categorizer.normalize(name));
+        if (learned != null) {
+            return learned;
+        }
+        if (QuantityParser.isCanOrJar(quantity)) {
+            return Category.CANNED.key();
+        }
         return categorizer.classify(name, data.learned()).key();
     }
 
@@ -253,7 +265,7 @@ public class ShoppingService {
         List<Item> items = new ArrayList<>(data.items());
         for (Ingredient ingredient : dish.ingredients()) {
             items.add(new Item(ShoppingRepository.newId(), ingredient.name(), ingredient.quantity(), dish.name(),
-                    categorize(data, ingredient.name()), now, me, null, null, dish.id(), null));
+                    categorize(data, ingredient.name(), ingredient.quantity()), now, me, null, null, dish.id(), null));
             // Gleicher Zeitstempel, aber die Reihenfolge der Zutaten soll
             // erhalten bleiben - die Sortierung ist stabil, das reicht.
         }
@@ -319,7 +331,7 @@ public class ShoppingService {
             boolean open = items.stream().anyMatch(i -> rule.id().equals(i.ruleId()) && !isChecked(i));
             if (due && !open) {
                 items.add(new Item(ShoppingRepository.newId(), rule.name(), rule.quantity(), null,
-                        categorize(data, rule.name()), now, BY_RULE, null, null, null, rule.id()));
+                        categorize(data, rule.name(), rule.quantity()), now, BY_RULE, null, null, null, rule.id()));
                 rules.add(rule.withNextAt(today.plusDays(rule.everyDays())));
             } else {
                 rules.add(rule);
