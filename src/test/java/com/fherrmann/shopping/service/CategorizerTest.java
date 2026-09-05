@@ -47,6 +47,14 @@ class CategorizerTest {
         assertEquals(Category.BAKERY, of("Vollkornbrot"));
         assertEquals(Category.MEAT, of("500g Hackfleisch"));
         assertEquals(Category.MEAT, of("Hähnchenbrust"));
+        assertEquals(Category.MEAT, of("Rinderhackfleisch"));
+        assertEquals(Category.FISH, of("Lachs"));
+        assertEquals(Category.FISH, of("Räucherlachs"));
+        assertEquals(Category.FISH, of("Seelachsfilet"));
+        assertEquals(Category.FISH, of("Garnelen"));
+        // Dose und Tiefkuehltruhe bleiben, wo sie sind.
+        assertEquals(Category.CANNED, of("Thunfisch Dose"));
+        assertEquals(Category.FROZEN, of("Fischstäbchen"));
         assertEquals(Category.DAIRY, of("Milch 1l"));
         assertEquals(Category.DAIRY, of("MILCH"));
         assertEquals(Category.DAIRY, of("Gouda"));

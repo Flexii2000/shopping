@@ -46,7 +46,7 @@ könnte man den Link gar nicht öffnen. Die Seite zeigt dann „Kein Zugang".
   Einkaufsmengen.
 - **Sortiert nach Kategorien** — eine Liste, keine Abschnitte, in der
   Reihenfolge eines Supermarkt-Rundgangs: Obst & Gemüse, Backwaren,
-  Fleisch & Fisch, Milchprodukte, Konserven, Vorrat & Trockenwaren,
+  Fleisch & Wurst, Fisch & Meeresfrüchte, Milchprodukte, Konserven, Vorrat & Trockenwaren,
   Gewürze & Saucen, Snacks & Süßes, Getränke, Tiefkühl, Drogerie, Haushalt,
   Sonstiges. Die Kategorie **rät der Dienst** aus dem Namen
   (`Categorizer`): erst, was jemand für diesen Namen von Hand gewählt hat

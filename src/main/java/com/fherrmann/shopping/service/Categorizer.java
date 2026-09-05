@@ -65,7 +65,7 @@ public class Categorizer {
                 {"kaese", "dairy"}, {"joghurt", "dairy"}, {"jogurt", "dairy"}, {"quark", "dairy"}, {"sahne", "dairy"},
                 {"milch", "dairy"}, {"butter", "dairy"}, {"broetchen", "bakery"}, {"brot", "bakery"},
                 {"kuchen", "bakery"}, {"toast", "bakery"}, {"wurst", "meat"}, {"fleisch", "meat"}, {"filet", "meat"},
-                {"fisch", "meat"}, {"schinken", "meat"}, {"schnitzel", "meat"}, {"steak", "meat"}, {"saft", "beverages"},
+                {"fisch", "fish"}, {"garnelen", "fish"}, {"muscheln", "fish"}, {"schinken", "meat"}, {"schnitzel", "meat"}, {"steak", "meat"}, {"saft", "beverages"},
                 {"schorle", "beverages"}, {"limo", "beverages"}, {"limonade", "beverages"}, {"tee", "beverages"},
                 {"kaffee", "beverages"}, {"bier", "beverages"}, {"wein", "beverages"}, {"wasser", "beverages"},
                 {"cola", "beverages"}, {"chips", "snacks"}, {"schokolade", "snacks"}, {"kekse", "snacks"},

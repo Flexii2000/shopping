@@ -16,7 +16,10 @@ public enum Category {
 
     PRODUCE("produce", "Obst & Gemüse", "🥦", "carrot", "#34A853"),
     BAKERY("bakery", "Backwaren", "🍞", "birthday.cake", "#C98B3A"),
-    MEAT("meat", "Fleisch & Fisch", "🥩", "fish", "#D9483B"),
+    MEAT("meat", "Fleisch & Wurst", "🥩", "fork.knife", "#D9483B"),
+    // Eigene Theke, eigenes Bild: Rinderhack mit einem Fisch als Symbol war
+    // falsch, und im Laden liegt der Fisch woanders als die Wurst.
+    FISH("fish", "Fisch & Meeresfrüchte", "🐟", "fish", "#2E86C1"),
     DAIRY("dairy", "Milchprodukte", "🧀", "mug", "#3B82F6"),
     CANNED("canned", "Konserven", "🥫", "cylinder", "#7F8C9A"),
     STAPLES("staples", "Vorrat & Trockenwaren", "🍝", "cabinet", "#D89A00"),
