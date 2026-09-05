@@ -81,10 +81,38 @@ class ShoppingServiceTest {
         board = service.createItem("felix", new ItemRequest("Gurken", "1 Glas", null, null));
         assertEquals("canned", board.items().stream().filter(i -> i.name().equals("Gurken")).findFirst().orElseThrow().category());
 
-        // Von Hand gesetzt schlaegt die Verpackung.
+        // Von Hand gesetzt schlaegt die Verpackung - und derselbe Name wird
+        // ein Eintrag mit zusammengefasster Menge.
         service.updateItem("felix", tomaten.id(), new ItemRequest("Tomaten", "3 Dosen", null, "produce"));
         board = service.createItem("felix", new ItemRequest("Tomaten 2 Dosen", null, null, null));
-        assertEquals("produce", board.items().stream().filter(i -> "2 Dosen".equals(i.quantity())).findFirst().orElseThrow().category());
+        Item zusammen = board.items().stream().filter(i -> i.name().equals("Tomaten")).findFirst().orElseThrow();
+        assertEquals("5 Dosen", zusammen.quantity());
+        assertEquals("produce", zusammen.category());
+    }
+
+    @Test
+    void derselbeNameWirdEinEintragEgalWieGeschrieben() {
+        service.createItem("felix", new ItemRequest("Rinderhack 500g", null, null, null));
+        Board board = service.createItem("joana", new ItemRequest("rinderhack 500 g", null, null, null));
+        assertEquals(1, board.items().size());
+        Item hack = board.items().get(0);
+        assertEquals("Rinderhack", hack.name());
+        assertEquals("1000 g", hack.quantity());
+        assertEquals("felix", hack.addedBy());
+
+        // Abgehakt zaehlt nicht mehr als "steht schon drauf": das ist ein neuer Kauf.
+        service.check("felix", hack.id());
+        board = service.createItem("felix", new ItemRequest("RINDERHACK", null, null, null));
+        assertEquals(2, board.items().size());
+
+        // Auch ein Gericht legt keine zweite Zeile an.
+        service.createItem("felix", new ItemRequest("Zwiebeln", "1 Stk", null, null));
+        Board dishes = service.createDish("felix", new DishRequest("Suppe", List.of(new DishRequest.IngredientRequest("zwiebeln", "2 Stk"))));
+        board = service.addDish("felix", dishes.dishes().get(0).id());
+        Item zwiebeln = board.items().stream().filter(i -> i.name().equals("Zwiebeln")).findFirst().orElseThrow();
+        assertEquals("3 Stk", zwiebeln.quantity());
+        assertEquals("Suppe", zwiebeln.note());
+        assertEquals(1, board.items().stream().filter(i -> i.name().equalsIgnoreCase("zwiebeln")).count());
     }
 
     @Test
@@ -237,10 +265,13 @@ class ShoppingServiceTest {
         assertEquals(dishId, hack.dishId());
         assertEquals("meat", hack.category());
 
-        // Noch einmal: Duplikate sind erlaubt.
-        assertEquals(4, service.addDish("felix", dishId).items().size());
+        // Noch einmal: keine zweite Zeile, die Mengen kommen zusammen.
+        board = service.addDish("felix", dishId);
+        assertEquals(2, board.items().size());
+        assertEquals("1000 g", board.items().get(1).quantity());
+        assertEquals("4 Stk", board.items().get(0).quantity());
         // Gericht loeschen laesst die Eintraege stehen.
-        assertEquals(4, service.deleteDish("felix", dishId).items().size());
+        assertEquals(2, service.deleteDish("felix", dishId).items().size());
     }
 
     @Test

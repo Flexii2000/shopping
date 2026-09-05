@@ -45,6 +45,19 @@ class QuantityParserTest {
     }
 
     @Test
+    void mengenWerdenZusammengefasst() {
+        assertEquals("1000 g", QuantityParser.merge("500 g", "500 g"));
+        assertEquals("5 Stk", QuantityParser.merge("2 Stk", "3 Stk"));
+        assertEquals("2,5 kg", QuantityParser.merge("1,5 kg", "1 kg"));
+        assertEquals("3 Dosen", QuantityParser.merge("1 Dose", "2 Dosen"));
+        assertEquals("2 Stk", QuantityParser.merge(null, "2 Stk"));
+        assertEquals("500 g", QuantityParser.merge("500 g", "  "));
+        assertEquals("500 g + 1 Pck", QuantityParser.merge("500 g", "1 Pck"));
+        assertEquals("eine Handvoll", QuantityParser.merge("eine Handvoll", "eine Handvoll"));
+        assertNull(QuantityParser.merge(null, null));
+    }
+
+    @Test
     void laesstNamenOhneMengeInRuhe() {
         assertEquals(new QuantityParser.Split("Mehl Type 405", null), split("Mehl Type 405"));
         assertEquals(new QuantityParser.Split("H-Milch 3,5%", null), split("H-Milch 3,5%"));

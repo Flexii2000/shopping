@@ -40,8 +40,14 @@ könnte man den Link gar nicht öffnen. Die Seite zeigt dann „Kein Zugang".
   (`shopping.history-days`), ein nächtlicher Aufräumer löscht Älteres.
   „Abgehakte entfernen" (`clear-checked`) löscht sie sofort und wirklich.
 - **Gerichte** mit Zutaten (Name + Menge). „Auf die Liste" legt je Zutat einen
-  Eintrag an, mit dem Gerichtnamen als Notiz. Doppelte sind erlaubt. Das
-  Gericht zu löschen lässt Einträge auf der Liste stehen. Bewusst nicht mit
+  Eintrag an, mit dem Gerichtnamen als Notiz. Das Gericht zu löschen lässt
+  Einträge auf der Liste stehen.
+- **Derselbe Name wird ein Eintrag** — Groß-/Kleinschreibung und Leerraum
+  zählen nicht. Mengen gleicher Einheit werden addiert („500 g" + „500 g" =
+  „1000 g"), verschiedene stehen nebeneinander („500 g + 1 Pck"). Ein
+  abgehakter Eintrag zählt nicht mehr als „steht schon drauf". Gilt für
+  Eingaben, Gerichte und Regeln (eine Regel hängt sich an den vorhandenen
+  Eintrag, Abhaken schiebt sie weiter). Bewusst nicht mit
   dem Kalorienzähler verknüpft — dort haben Gerichte Nährwerte je 100 g, hier
   Einkaufsmengen.
 - **Sortiert nach Kategorien** — eine Liste, keine Abschnitte, in der

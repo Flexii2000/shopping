@@ -1,5 +1,6 @@
 package com.fherrmann.shopping.service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -180,6 +181,46 @@ public final class QuantityParser {
         List<String> tokens = words(quantity);
         Phrase phrase = tokens.isEmpty() ? null : phrase(tokens, 0);
         return phrase != null && (phrase.quantity().unit().equals("Dose") || phrase.quantity().unit().equals("Glas"));
+    }
+
+    /**
+     * Zwei Mengen zu einer: gleiche Einheit wird addiert ("500 g" + "500 g" =
+     * "1000 g", "1 Dose" + "2 Dosen" = "3 Dosen"), verschiedene stehen
+     * nebeneinander ("500 g + 1 Pck"). Fehlt eine, bleibt die andere.
+     */
+    public static String merge(String a, String b) {
+        boolean noA = a == null || a.isBlank();
+        boolean noB = b == null || b.isBlank();
+        if (noA) {
+            return noB ? null : normalize(b);
+        }
+        if (noB) {
+            return normalize(a);
+        }
+        Phrase pa = whole(a);
+        Phrase pb = whole(b);
+        if (pa != null && pb != null && pa.quantity().unit().equals(pb.quantity().unit())) {
+            BigDecimal sum = decimal(pa.quantity().amount()).add(decimal(pb.quantity().amount()));
+            return new Quantity(plain(sum), pa.quantity().unit()).text();
+        }
+        String x = normalize(a);
+        String y = normalize(b);
+        return x.equalsIgnoreCase(y) ? x : x + " + " + y;
+    }
+
+    private static Phrase whole(String text) {
+        List<String> tokens = words(text);
+        Phrase phrase = tokens.isEmpty() ? null : phrase(tokens, 0);
+        return phrase != null && phrase.used() == tokens.size() ? phrase : null;
+    }
+
+    private static BigDecimal decimal(String amount) {
+        return new BigDecimal(amount.replace(',', '.'));
+    }
+
+    /** Ohne Nachkommanullen, mit Komma: 1000, 2,5. */
+    private static String plain(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString().replace('.', ',');
     }
 
     /** "500g" wird "500 g", "2" wird "2 Stk", "drei Dosen" wird "3 Dosen"; was sich nicht lesen laesst, bleibt. */

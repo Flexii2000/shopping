@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -122,9 +123,44 @@ public class ShoppingService {
         String name = split.name();
         ShoppingData data = learn(repository.load(), name, request.category());
         List<Item> items = new ArrayList<>(data.items());
+        Item same = openItemNamed(items, name);
+        if (same != null) {
+            // Derselbe Name noch einmal - egal wie geschrieben - wird EIN
+            // Eintrag: die Mengen zusammen, nicht zwei Zeilen Rinderhack.
+            // Eine von Hand gewaehlte Kategorie gilt auch fuer den Eintrag.
+            String category = isBlank(request.category()) ? same.category() : categorize(data, name, split.quantity());
+            Item merged = same.merged(QuantityParser.merge(same.quantity(), split.quantity()),
+                    mergeNotes(same.note(), clean(request.note())), null, null);
+            items.set(items.indexOf(same), merged.withText(merged.name(), merged.quantity(), merged.note(), category));
+            return save(data.withItems(items), me);
+        }
         items.add(new Item(ShoppingRepository.newId(), name, split.quantity(), clean(request.note()),
                 categorize(data, name, split.quantity()), Instant.now(clock), me, null, null, null, null));
         return save(data.withItems(items), me);
+    }
+
+    /** Der offene Eintrag mit diesem Namen - Gross-/Kleinschreibung und Leerraum zaehlen nicht. */
+    private static Item openItemNamed(List<Item> items, String name) {
+        String key = nameKey(name);
+        return items.stream().filter(i -> !isChecked(i) && nameKey(i.name()).equals(key)).findFirst().orElse(null);
+    }
+
+    static String nameKey(String name) {
+        return name.strip().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private static String mergeNotes(String a, String b) {
+        if (isBlank(a)) {
+            return isBlank(b) ? null : b;
+        }
+        if (isBlank(b) || a.equalsIgnoreCase(b)) {
+            return a;
+        }
+        return a + ", " + b;
+    }
+
+    private static boolean isBlank(String text) {
+        return text == null || text.isBlank();
     }
 
     /** Ohne {@code category} im Rumpf wird neu geraten - auch wenn nur die Menge geaendert wurde. */
@@ -264,6 +300,12 @@ public class ShoppingService {
         Instant now = Instant.now(clock);
         List<Item> items = new ArrayList<>(data.items());
         for (Ingredient ingredient : dish.ingredients()) {
+            Item same = openItemNamed(items, ingredient.name());
+            if (same != null) {
+                items.set(items.indexOf(same), same.merged(QuantityParser.merge(same.quantity(), ingredient.quantity()),
+                        mergeNotes(same.note(), dish.name()), dish.id(), null));
+                continue;
+            }
             items.add(new Item(ShoppingRepository.newId(), ingredient.name(), ingredient.quantity(), dish.name(),
                     categorize(data, ingredient.name(), ingredient.quantity()), now, me, null, null, dish.id(), null));
             // Gleicher Zeitstempel, aber die Reihenfolge der Zutaten soll
@@ -330,8 +372,18 @@ public class ShoppingService {
             boolean due = !rule.nextAt().isAfter(today);
             boolean open = items.stream().anyMatch(i -> rule.id().equals(i.ruleId()) && !isChecked(i));
             if (due && !open) {
-                items.add(new Item(ShoppingRepository.newId(), rule.name(), rule.quantity(), null,
-                        categorize(data, rule.name(), rule.quantity()), now, BY_RULE, null, null, null, rule.id()));
+                Item same = openItemNamed(items, rule.name());
+                if (same != null) {
+                    // Steht schon jemand von Hand auf der Liste, haengt sich die
+                    // Regel daran: Abhaken schiebt sie dann weiter. Die Menge
+                    // bleibt, wie sie eingetragen wurde - nur wo keine steht,
+                    // kommt die der Regel.
+                    items.set(items.indexOf(same), same.merged(
+                            isBlank(same.quantity()) ? rule.quantity() : same.quantity(), same.note(), null, rule.id()));
+                } else {
+                    items.add(new Item(ShoppingRepository.newId(), rule.name(), rule.quantity(), null,
+                            categorize(data, rule.name(), rule.quantity()), now, BY_RULE, null, null, null, rule.id()));
+                }
                 rules.add(rule.withNextAt(today.plusDays(rule.everyDays())));
             } else {
                 rules.add(rule);

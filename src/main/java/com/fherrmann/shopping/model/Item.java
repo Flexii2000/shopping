@@ -42,4 +42,14 @@ public record Item(
     public Item withText(String name, String quantity, String note, String category) {
         return new Item(id, name, quantity, note, category, addedAt, addedBy, checkedAt, checkedBy, dishId, ruleId);
     }
+
+    /**
+     * Zusammengefasst mit einem zweiten Eintrag desselben Namens: Menge und
+     * Notiz vereint, eine Herkunft (Gericht, Regel) kommt dazu, wenn noch
+     * keine da ist. Name, Schreibweise und Zeitpunkt des ersten bleiben.
+     */
+    public Item merged(String quantity, String note, String dishId, String ruleId) {
+        return new Item(id, name, quantity, note, category, addedAt, addedBy, checkedAt, checkedBy,
+                this.dishId != null ? this.dishId : dishId, this.ruleId != null ? this.ruleId : ruleId);
+    }
 }
