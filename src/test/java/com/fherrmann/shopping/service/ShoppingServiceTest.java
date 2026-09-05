@@ -52,6 +52,25 @@ class ShoppingServiceTest {
     }
 
     @Test
+    void dieMengeImNamenWirdHerausgeloestUndDerRestZugeordnet() {
+        Board board = service.createItem("felix", new ItemRequest("gemischtes Hack 200g", null, null, null));
+        Item hack = board.items().get(0);
+        assertEquals("gemischtes Hack", hack.name());
+        assertEquals("200 g", hack.quantity());
+        assertEquals("meat", hack.category());
+
+        board = service.createItem("felix", new ItemRequest("Mehl Type 405", null, null, null));
+        Item mehl = board.items().stream().filter(i -> i.name().startsWith("Mehl")).findFirst().orElseThrow();
+        assertEquals("Mehl Type 405", mehl.name());
+        assertNull(mehl.quantity());
+
+        // Beides angegeben: der Name bleibt, die Menge wird nur vereinheitlicht.
+        board = service.createItem("felix", new ItemRequest("Hack 200g", "500g", null, null));
+        Item beides = board.items().stream().filter(i -> i.name().equals("Hack 200g")).findFirst().orElseThrow();
+        assertEquals("500 g", beides.quantity());
+    }
+
+    @Test
     void abgehaktBleibtBisMitternachtSichtbarUndDannNurInDerDatei() {
         Board board = service.createItem("felix", new ItemRequest("Milch", "2", null, null));
         assertEquals("felix", board.me());
@@ -105,7 +124,7 @@ class ShoppingServiceTest {
         at(NOW.plus(Duration.ofMinutes(2))).createItem("felix", new ItemRequest("Äpfel", null, null, null));
         at(NOW.plus(Duration.ofMinutes(3))).createItem("felix", new ItemRequest("Butter", null, null, null));
         Board board = service.board("felix");
-        assertEquals(List.of("2 Zwiebeln", "Äpfel", "Milch", "Butter", "Klopapier"),
+        assertEquals(List.of("Zwiebeln", "Äpfel", "Milch", "Butter", "Klopapier"),
                 board.items().stream().map(Item::name).toList());
         assertEquals(List.of("produce", "produce", "dairy", "dairy", "household"),
                 board.items().stream().map(Item::category).toList());
@@ -151,7 +170,7 @@ class ShoppingServiceTest {
         Item klopapier = board.items().get(0);
         assertEquals(ruleId, klopapier.ruleId());
         assertEquals(ShoppingService.BY_RULE, klopapier.addedBy());
-        assertEquals("1 Pack", klopapier.quantity());
+        assertEquals("1 Pck", klopapier.quantity());
         assertEquals(LocalDate.of(2026, 9, 17), board.recurring().get(0).nextAt());
 
         // Ein zweiter Lauf, sogar Wochen spaeter: solange der Eintrag offen ist, kein zweiter.

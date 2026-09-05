@@ -114,22 +114,30 @@ public class ShoppingService {
     // MARK: - Eintraege
 
     public Board createItem(String me, ItemRequest request) {
-        String name = cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen.");
+        // "gemischtes Hack 200g" in einem Feld: die Menge steckt im Namen und
+        // wird herausgeloest - erst danach wird der Name zugeordnet.
+        QuantityParser.Split split = QuantityParser.resolve(
+                cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen."),
+                clean(request.quantity()));
+        String name = split.name();
         ShoppingData data = learn(repository.load(), name, request.category());
         List<Item> items = new ArrayList<>(data.items());
-        items.add(new Item(ShoppingRepository.newId(), name, clean(request.quantity()), clean(request.note()),
+        items.add(new Item(ShoppingRepository.newId(), name, split.quantity(), clean(request.note()),
                 categorize(data, name), Instant.now(clock), me, null, null, null, null));
         return save(data.withItems(items), me);
     }
 
     /** Ohne {@code category} im Rumpf wird neu geraten - auch wenn nur die Menge geaendert wurde. */
     public Board updateItem(String me, String id, ItemRequest request) {
-        String name = cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen.");
+        QuantityParser.Split split = QuantityParser.resolve(
+                cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen."),
+                clean(request.quantity()));
+        String name = split.name();
         ShoppingData data = learn(repository.load(), name, request.category());
         findItem(data, id);
         String category = categorize(data, name);
         return save(data.withItems(data.items().stream()
-                .map(i -> i.id().equals(id) ? i.withText(name, clean(request.quantity()), clean(request.note()), category) : i)
+                .map(i -> i.id().equals(id) ? i.withText(name, split.quantity(), clean(request.note()), category) : i)
                 .toList()), me);
     }
 
@@ -255,8 +263,9 @@ public class ShoppingService {
     // MARK: - Regeln
 
     public Board createRule(String me, RecurringRequest request) {
-        RecurringRule rule = new RecurringRule(ShoppingRepository.newId(), cleanRuleName(request),
-                clean(request.quantity()), cleanEveryDays(request),
+        QuantityParser.Split split = QuantityParser.resolve(cleanRuleName(request), clean(request.quantity()));
+        RecurringRule rule = new RecurringRule(ShoppingRepository.newId(), split.name(),
+                split.quantity(), cleanEveryDays(request),
                 request.nextAt() == null ? today() : request.nextAt(), Instant.now(clock));
         ShoppingData data = repository.load();
         List<RecurringRule> rules = new ArrayList<>(data.recurring());
@@ -267,13 +276,14 @@ public class ShoppingService {
     }
 
     public Board updateRule(String me, String id, RecurringRequest request) {
-        String name = cleanRuleName(request);
+        QuantityParser.Split split = QuantityParser.resolve(cleanRuleName(request), clean(request.quantity()));
+        String name = split.name();
         int everyDays = cleanEveryDays(request);
         ShoppingData data = repository.load();
         RecurringRule existing = findRule(data, id);
         LocalDate nextAt = request.nextAt() == null ? existing.nextAt() : request.nextAt();
         return save(applyRules(data.withRecurring(data.recurring().stream()
-                .map(r -> r.id().equals(id) ? r.withText(name, clean(request.quantity()), everyDays, nextAt) : r)
+                .map(r -> r.id().equals(id) ? r.withText(name, split.quantity(), everyDays, nextAt) : r)
                 .toList())), me);
     }
 
@@ -373,7 +383,8 @@ public class ShoppingService {
             if (name.length() > MAX_NAME) {
                 throw badRequest("Eine Zutat darf höchstens " + MAX_NAME + " Zeichen haben.");
             }
-            result.add(new Ingredient(name, clean(ingredient.quantity())));
+            QuantityParser.Split split = QuantityParser.resolve(name, clean(ingredient.quantity()));
+            result.add(new Ingredient(split.name(), split.quantity()));
         }
         return result;
     }
