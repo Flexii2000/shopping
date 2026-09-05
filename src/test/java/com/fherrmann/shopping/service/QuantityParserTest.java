@@ -34,6 +34,17 @@ class QuantityParserTest {
     }
 
     @Test
+    void einEinheitenwortOhneZahlHeisstEins() {
+        assertEquals(new QuantityParser.Split("Cola", "1 l"), split("Liter Cola"));
+        assertEquals(new QuantityParser.Split("Nudeln", "1 Pck"), split("Packung Nudeln"));
+        assertEquals(new QuantityParser.Split("Tomaten", "1 Dose"), split("Dose Tomaten"));
+        assertEquals(new QuantityParser.Split("Cola", "1 l"), split("Cola Liter"));
+        assertEquals("1 l", QuantityParser.normalize("Liter"));
+        assertEquals(new QuantityParser.Split("g Zucker", null), split("g Zucker"));
+        assertEquals(new QuantityParser.Split("Glas", null), split("Glas"));
+    }
+
+    @Test
     void laesstNamenOhneMengeInRuhe() {
         assertEquals(new QuantityParser.Split("Mehl Type 405", null), split("Mehl Type 405"));
         assertEquals(new QuantityParser.Split("H-Milch 3,5%", null), split("H-Milch 3,5%"));

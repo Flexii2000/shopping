@@ -201,6 +201,15 @@ public final class QuantityParser {
             String unit = unit(glued.group(2));
             return unit == null ? null : new Phrase(new Quantity(glued.group(1), unit), 1);
         }
+        // Ein Einheitenwort ohne Zahl heisst eins: "Liter Cola", "Packung
+        // Nudeln", "Dose Tomaten". Nur ausgeschriebene Woerter - ein "l" oder
+        // "g" allein ist eher ein Tippfehler als eine Menge.
+        if (first.length() >= 3 && first.chars().allMatch(Character::isLetter)) {
+            String unit = unit(first);
+            if (unit != null) {
+                return new Phrase(new Quantity("1", unit), 1);
+            }
+        }
         String amount = number(first);
         if (amount == null) {
             return null;
