@@ -1,10 +1,13 @@
 package com.fherrmann.shopping.service;
 
 import com.fherrmann.shopping.dto.Board;
+import com.fherrmann.shopping.dto.ClearCheckedRequest;
+import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
 import com.fherrmann.shopping.model.Category;
+import com.fherrmann.shopping.model.ClientRef;
 import com.fherrmann.shopping.model.Dish;
 import com.fherrmann.shopping.model.Ingredient;
 import com.fherrmann.shopping.model.Item;
@@ -23,9 +26,12 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Die Regeln: eine Liste fuer zwei Personen, Gerichte als Ganzes drauf,
@@ -47,7 +53,18 @@ import java.util.Map;
  *     Supermarkt-Rundgangs ({@link Category}). Die Kategorie raet der
  *     {@link Categorizer}; wer sie von Hand setzt, bringt dem Dienst den
  *     Namen bei, und der gilt dann auch fuer Gerichte und Regeln.</li>
+ * <li><b>Die App darf die Kennung eines neuen Eintrags vergeben</b> (seit 12.10.):
+ *     ohne Netz steht er sofort auf der Liste und laesst sich abhaken, bevor der
+ *     Dienst ihn kennt. Geht er in einem offenen gleichen Namens auf, merkt sich
+ *     {@code clientIds}, wohin - Haken und Loeschen mit der Kennung der App treffen
+ *     dann diesen. Dieselbe Kennung zweimal legt nichts an: nachgesendet wuerden aus
+ *     2 Litern Milch sonst 4.</li>
  * </ul>
+ *
+ * <p>Jedes Aendern laedt, aendert und speichert in einem Zug ({@code synchronized}) -
+ * auch der Stundenlauf der Regeln. Nachgesendetes aus zwei Postausgaengen kommt in
+ * Schueben, und zwei Schreiber, die beide den alten Stand gelesen haben, verloeren
+ * sonst den Eintrag des anderen.
  */
 @Service
 public class ShoppingService {
@@ -55,6 +72,9 @@ public class ShoppingService {
     static final int MAX_NAME = 200;
     /** Wer einen Eintrag ueber eine Regel bekommt, sieht das als Urheber. */
     static final String BY_RULE = "regel";
+    /** Kennungen, die eine App vergibt: kleingeschriebene UUIDs, wie der Dienst sie auch erzeugt. */
+    private static final Pattern CLIENT_ID =
+            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     private final ShoppingRepository repository;
     private final Categorizer categorizer;
@@ -114,14 +134,21 @@ public class ShoppingService {
 
     // MARK: - Eintraege
 
-    public Board createItem(String me, ItemRequest request) {
+    public synchronized Board createItem(String me, ItemRequest request) {
         // "gemischtes Hack 200g" in einem Feld: die Menge steckt im Namen und
         // wird herausgeloest - erst danach wird der Name zugeordnet.
         QuantityParser.Split split = QuantityParser.resolve(
                 cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen."),
                 clean(request.quantity()));
+        String clientId = cleanClientId(request.id());
         String name = split.name();
-        ShoppingData data = learn(repository.load(), name, request.category());
+        ShoppingData loaded = repository.load();
+        if (clientId != null && knows(loaded, clientId)) {
+            // Derselbe Eintrag noch einmal - aus dem Postausgang nachgesendet, weil die
+            // erste Antwort verloren ging. Nicht noch einmal zusammenfassen.
+            return board(loaded, me);
+        }
+        ShoppingData data = learn(loaded, name, request.category());
         List<Item> items = new ArrayList<>(data.items());
         Item same = openItemNamed(items, name);
         if (same != null) {
@@ -132,11 +159,65 @@ public class ShoppingService {
             Item merged = same.merged(QuantityParser.merge(same.quantity(), split.quantity()),
                     mergeNotes(same.note(), clean(request.note())), null, null);
             items.set(items.indexOf(same), merged.withText(merged.name(), merged.quantity(), merged.note(), category));
-            return save(data.withItems(items), me);
+            return save(remember(data.withItems(items), clientId, same.id()), me);
         }
-        items.add(new Item(ShoppingRepository.newId(), name, split.quantity(), clean(request.note()),
+        String id = clientId != null ? clientId : ShoppingRepository.newId();
+        items.add(new Item(id, name, split.quantity(), clean(request.note()),
                 categorize(data, name, split.quantity()), Instant.now(clock), me, null, null, null, null));
-        return save(data.withItems(items), me);
+        return save(remember(data.withItems(items), clientId, id), me);
+    }
+
+    /** Ob der Dienst diese Kennung einer App schon kennt - als Eintrag oder als aufgegangene. */
+    private static boolean knows(ShoppingData data, String clientId) {
+        return data.clientIds().containsKey(clientId) || data.items().stream().anyMatch(i -> i.id().equals(clientId));
+    }
+
+    /**
+     * Merkt sich, welcher Eintrag aus welcher Kennung einer App wurde. Auch wenn es
+     * derselbe ist: wird er geloescht und kommt das Anlegen spaeter noch einmal an,
+     * holte es ihn sonst zurueck.
+     */
+    private ShoppingData remember(ShoppingData data, String clientId, String itemId) {
+        return clientId == null ? data : remember(data, Map.of(clientId, itemId));
+    }
+
+    private ShoppingData remember(ShoppingData data, Map<String, String> clientToItem) {
+        if (clientToItem.isEmpty()) {
+            return data;
+        }
+        Map<String, ClientRef> refs = new HashMap<>(data.clientIds());
+        Instant now = Instant.now(clock);
+        clientToItem.forEach((clientId, itemId) -> refs.put(clientId, new ClientRef(itemId, now)));
+        return data.withClientIds(refs);
+    }
+
+    /**
+     * Die Kennung eines Eintrags auf der Liste - auch fuer eine, die eine App vergeben
+     * hat und die in einem offenen gleichen Namens aufging. Unbekannt bleibt sie, wie
+     * sie ist, und fuehrt zu "nicht gefunden".
+     */
+    private static String resolve(ShoppingData data, String id) {
+        if (data.items().stream().anyMatch(i -> i.id().equals(id))) {
+            return id;
+        }
+        ClientRef ref = data.clientIds().get(id);
+        return ref == null ? id : ref.itemId();
+    }
+
+    /**
+     * Die Kennung einer App: leer heisst keine. Sonst nur eine kleingeschriebene UUID -
+     * die App fragt spaeter mit genau dieser Zeichenkette, ein still umgeschriebener
+     * Wert fuehrte dann ins Leere.
+     */
+    private static String cleanClientId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String id = raw.trim();
+        if (!CLIENT_ID.matcher(id).matches()) {
+            throw badRequest("Die Kennung ist keine UUID.");
+        }
+        return id;
     }
 
     /** Der offene Eintrag mit diesem Namen - Gross-/Kleinschreibung und Leerraum zaehlen nicht. */
@@ -164,16 +245,17 @@ public class ShoppingService {
     }
 
     /** Ohne {@code category} im Rumpf wird neu geraten - auch wenn nur die Menge geaendert wurde. */
-    public Board updateItem(String me, String id, ItemRequest request) {
+    public synchronized Board updateItem(String me, String id, ItemRequest request) {
         QuantityParser.Split split = QuantityParser.resolve(
                 cleanName(request == null ? null : request.name(), "Ein Eintrag braucht einen Namen."),
                 clean(request.quantity()));
         String name = split.name();
         ShoppingData data = learn(repository.load(), name, request.category());
-        findItem(data, id);
+        String target = resolve(data, id);
+        findItem(data, target);
         String category = categorize(data, name, split.quantity());
         return save(data.withItems(data.items().stream()
-                .map(i -> i.id().equals(id) ? i.withText(name, split.quantity(), clean(request.note()), category) : i)
+                .map(i -> i.id().equals(target) ? i.withText(name, split.quantity(), clean(request.note()), category) : i)
                 .toList()), me);
     }
 
@@ -209,10 +291,11 @@ public class ShoppingService {
         return categorizer.classify(name, data.learned()).key();
     }
 
-    public Board deleteItem(String me, String id) {
+    public synchronized Board deleteItem(String me, String id) {
         ShoppingData data = repository.load();
-        findItem(data, id);
-        return save(data.withItems(data.items().stream().filter(i -> !i.id().equals(id)).toList()), me);
+        String target = resolve(data, id);
+        findItem(data, target);
+        return save(data.withItems(data.items().stream().filter(i -> !i.id().equals(target)).toList()), me);
     }
 
     /**
@@ -220,15 +303,15 @@ public class ShoppingService {
      * ersten bleiben. Haengt eine Regel am Eintrag, zaehlt ihr Rhythmus ab
      * jetzt.
      */
-    public Board check(String me, String id) {
+    public synchronized Board check(String me, String id) {
         ShoppingData data = repository.load();
-        Item item = findItem(data, id);
+        Item item = findItem(data, resolve(data, id));
         if (isChecked(item)) {
             return board(data, me);
         }
         Instant now = Instant.now(clock);
         ShoppingData updated = data.withItems(data.items().stream()
-                .map(i -> i.id().equals(id) ? i.withChecked(now, me) : i).toList());
+                .map(i -> i.id().equals(item.id()) ? i.withChecked(now, me) : i).toList());
         if (item.ruleId() != null) {
             LocalDate today = today();
             updated = updated.withRecurring(updated.recurring().stream()
@@ -239,14 +322,14 @@ public class ShoppingService {
     }
 
     /** Haken zurueck. Bei einem offenen Eintrag passiert nichts. */
-    public Board uncheck(String me, String id) {
+    public synchronized Board uncheck(String me, String id) {
         ShoppingData data = repository.load();
-        Item item = findItem(data, id);
+        Item item = findItem(data, resolve(data, id));
         if (!isChecked(item)) {
             return board(data, me);
         }
         return save(data.withItems(data.items().stream()
-                .map(i -> i.id().equals(id) ? i.withChecked(null, null) : i).toList()), me);
+                .map(i -> i.id().equals(item.id()) ? i.withChecked(null, null) : i).toList()), me);
     }
 
     /**
@@ -255,13 +338,32 @@ public class ShoppingService {
      * Milchtueten ist niemandem etwas wert.
      */
     public Board clearChecked(String me) {
+        return clearChecked(me, null);
+    }
+
+    /**
+     * Mit Liste nur die genannten, sofern noch abgehakt: die App schickt, was sie
+     * abgehakt sah. Kommt das offline Gedrueckte spaeter an, bleibt ein Eintrag, den
+     * die andere Person inzwischen abgehakt hat - sie will ihn vielleicht noch sehen.
+     */
+    public synchronized Board clearChecked(String me, ClearCheckedRequest request) {
         ShoppingData data = repository.load();
-        return save(data.withItems(data.items().stream().filter(i -> !isChecked(i)).toList()), me);
+        if (request == null || request.ids() == null) {
+            return save(data.withItems(data.items().stream().filter(i -> !isChecked(i)).toList()), me);
+        }
+        Set<String> ids = new HashSet<>();
+        for (String id : request.ids()) {
+            if (id != null) {
+                ids.add(resolve(data, id));
+            }
+        }
+        return save(data.withItems(data.items().stream()
+                .filter(i -> !(isChecked(i) && ids.contains(i.id()))).toList()), me);
     }
 
     // MARK: - Gerichte
 
-    public Board createDish(String me, DishRequest request) {
+    public synchronized Board createDish(String me, DishRequest request) {
         Dish dish = new Dish(ShoppingRepository.newId(), cleanDishName(request), ingredients(request), Instant.now(clock));
         ShoppingData data = repository.load();
         List<Dish> dishes = new ArrayList<>(data.dishes());
@@ -269,7 +371,7 @@ public class ShoppingService {
         return save(data.withDishes(dishes), me);
     }
 
-    public Board updateDish(String me, String id, DishRequest request) {
+    public synchronized Board updateDish(String me, String id, DishRequest request) {
         String name = cleanDishName(request);
         List<Ingredient> ingredients = ingredients(request);
         ShoppingData data = repository.load();
@@ -280,7 +382,7 @@ public class ShoppingService {
     }
 
     /** Loescht das Gericht. Eintraege, die daraus schon auf der Liste stehen, bleiben. */
-    public Board deleteDish(String me, String id) {
+    public synchronized Board deleteDish(String me, String id) {
         ShoppingData data = repository.load();
         findDish(data, id);
         return save(data.withDishes(data.dishes().stream().filter(d -> !d.id().equals(id)).toList()), me);
@@ -292,31 +394,61 @@ public class ShoppingService {
      * Zwiebeln sind zwei Eintraege, die Mengen unterscheiden sich ja.
      */
     public Board addDish(String me, String id) {
+        return addDish(me, id, null);
+    }
+
+    /**
+     * Mit den Kennungen, die die App je Zutat vergeben hat (Zuordnung ueber den Namen).
+     * Kennt der Dienst eine davon schon, kam dasselbe Gericht schon an - nachgesendet,
+     * weil die Antwort verloren ging -, und es aendert sich nichts.
+     */
+    public synchronized Board addDish(String me, String id, DishAddRequest request) {
         ShoppingData data = repository.load();
         Dish dish = findDish(data, id);
         if (dish.ingredients().isEmpty()) {
             throw badRequest("„" + dish.name() + "“ hat keine Zutaten.");
         }
+        Map<String, String> clientIdByName = new HashMap<>();
+        if (request != null && request.items() != null) {
+            for (DishAddRequest.Entry entry : request.items()) {
+                String clientId = entry == null || entry.name() == null ? null : cleanClientId(entry.id());
+                if (clientId != null) {
+                    if (knows(data, clientId)) {
+                        return board(data, me);
+                    }
+                    clientIdByName.putIfAbsent(nameKey(entry.name()), clientId);
+                }
+            }
+        }
         Instant now = Instant.now(clock);
         List<Item> items = new ArrayList<>(data.items());
+        Map<String, String> clientToItem = new HashMap<>();
         for (Ingredient ingredient : dish.ingredients()) {
+            String clientId = clientIdByName.remove(nameKey(ingredient.name()));
             Item same = openItemNamed(items, ingredient.name());
             if (same != null) {
                 items.set(items.indexOf(same), same.merged(QuantityParser.merge(same.quantity(), ingredient.quantity()),
                         mergeNotes(same.note(), dish.name()), dish.id(), null));
+                if (clientId != null) {
+                    clientToItem.put(clientId, same.id());
+                }
                 continue;
             }
-            items.add(new Item(ShoppingRepository.newId(), ingredient.name(), ingredient.quantity(), dish.name(),
+            String itemId = clientId != null ? clientId : ShoppingRepository.newId();
+            items.add(new Item(itemId, ingredient.name(), ingredient.quantity(), dish.name(),
                     categorize(data, ingredient.name(), ingredient.quantity()), now, me, null, null, dish.id(), null));
+            if (clientId != null) {
+                clientToItem.put(clientId, itemId);
+            }
             // Gleicher Zeitstempel, aber die Reihenfolge der Zutaten soll
             // erhalten bleiben - die Sortierung ist stabil, das reicht.
         }
-        return save(data.withItems(items), me);
+        return save(remember(data.withItems(items), clientToItem), me);
     }
 
     // MARK: - Regeln
 
-    public Board createRule(String me, RecurringRequest request) {
+    public synchronized Board createRule(String me, RecurringRequest request) {
         QuantityParser.Split split = QuantityParser.resolve(cleanRuleName(request), clean(request.quantity()));
         RecurringRule rule = new RecurringRule(ShoppingRepository.newId(), split.name(),
                 split.quantity(), cleanEveryDays(request),
@@ -329,7 +461,7 @@ public class ShoppingService {
         return save(applyRules(data.withRecurring(rules)), me);
     }
 
-    public Board updateRule(String me, String id, RecurringRequest request) {
+    public synchronized Board updateRule(String me, String id, RecurringRequest request) {
         QuantityParser.Split split = QuantityParser.resolve(cleanRuleName(request), clean(request.quantity()));
         String name = split.name();
         int everyDays = cleanEveryDays(request);
@@ -342,14 +474,14 @@ public class ShoppingService {
     }
 
     /** Loescht die Regel. Ein offener Eintrag von ihr bleibt auf der Liste - man will ihn ja noch kaufen. */
-    public Board deleteRule(String me, String id) {
+    public synchronized Board deleteRule(String me, String id) {
         ShoppingData data = repository.load();
         findRule(data, id);
         return save(data.withRecurring(data.recurring().stream().filter(r -> !r.id().equals(id)).toList()), me);
     }
 
     /** Der Stundenlauf: faellige Regeln setzen ihren Eintrag. Speichert nur, wenn sich etwas getan hat. */
-    public void runRecurring() {
+    public synchronized void runRecurring() {
         ShoppingData data = repository.load();
         ShoppingData updated = applyRules(data);
         if (!updated.equals(data)) {
@@ -389,17 +521,25 @@ public class ShoppingService {
                 rules.add(rule);
             }
         }
-        return new ShoppingData(items, data.dishes(), rules, data.learned());
+        return new ShoppingData(items, data.dishes(), rules, data.learned(), data.clientIds());
     }
 
     /** Der Aufraeumer: abgehakte Eintraege, die aelter sind als die Frist, fliegen aus der Datei. */
-    public void cleanup() {
+    public synchronized void cleanup() {
         ShoppingData data = repository.load();
         Instant limit = Instant.now(clock).minus(history);
         List<Item> kept = data.items().stream()
                 .filter(i -> !isChecked(i) || i.checkedAt().isAfter(limit)).toList();
-        if (kept.size() != data.items().size()) {
-            repository.save(data.withItems(kept));
+        // Kennungen der Apps nach derselben Frist: was so lange im Postausgang lag,
+        // kommt nicht mehr.
+        Map<String, ClientRef> refs = new HashMap<>();
+        data.clientIds().forEach((clientId, ref) -> {
+            if (ref.at() == null || ref.at().isAfter(limit)) {
+                refs.put(clientId, ref);
+            }
+        });
+        if (kept.size() != data.items().size() || refs.size() != data.clientIds().size()) {
+            repository.save(data.withItems(kept).withClientIds(refs));
         }
     }
 

@@ -53,6 +53,19 @@ class ShoppingRepositoryTest {
         assertTrue(json.contains("\"2026-09-17\""), json);
     }
 
+    /** Seit 12.10. mit Kennungen der Apps - eine Datei von vorher liest sich ohne. */
+    @Test
+    void aeltereDateiOhneKennungenDerApps() throws Exception {
+        Path file = dir.resolve("shopping.json");
+        Files.writeString(file, """
+                {"items":[{"id":"i1","name":"Milch","category":"dairy","addedAt":"2026-09-03T10:00:00Z","addedBy":"felix"}],
+                 "dishes":[],"recurring":[],"learned":{}}
+                """);
+        ShoppingData data = new ShoppingRepository(file.toString(), MAPPER).load();
+        assertEquals(1, data.items().size());
+        assertTrue(data.clientIds().isEmpty());
+    }
+
     @Test
     void aeltereDateiOhneKategorieLiestSichAlsSonstiges() throws Exception {
         Path file = dir.resolve("shopping.json");

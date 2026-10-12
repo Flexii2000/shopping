@@ -42,11 +42,17 @@
     banner.hidden = false;
   }
 
+  // true, wenn der Dienst die Aenderung angenommen hat - sonst kann der Aufrufer
+  // zuruecknehmen, was der Browser schon angezeigt hat (Haken, geleerte Felder).
   async function run(method, path, body) {
     try {
       banner.hidden = true;
       render(await call(method, path, body));
-    } catch (err) { fail(err); }
+      return true;
+    } catch (err) {
+      fail(err);
+      return false;
+    }
   }
 
   const load = () => run("GET", "board");
@@ -161,8 +167,12 @@
     box.type = "checkbox";
     box.checked = !!item.checkedAt;
     box.title = item.checkedAt ? "Wieder öffnen" : "Abhaken";
-    box.addEventListener("change", () =>
-      run(box.checked ? "POST" : "DELETE", "items/" + item.id + "/check"));
+    box.addEventListener("change", async () => {
+      const wanted = box.checked;
+      // Der Browser hat den Haken schon gesetzt; nimmt der Dienst ihn nicht an,
+      // stuende sonst ein Haken da, den es nicht gibt.
+      if (!(await run(wanted ? "POST" : "DELETE", "items/" + item.id + "/check"))) box.checked = !wanted;
+    });
     // Das Icon der Kategorie vor dem Namen - die Liste ist danach sortiert,
     // Abschnitte gibt es keine: eine Liste, nur in Rundgang-Reihenfolge.
     const cat = category(item.category);
@@ -391,15 +401,22 @@
   // Beim Umhaengen der Optionen geht die Vorauswahl verloren - ausdruecklich
   // auf Stueck stellen, sonst steht die letzte Einheit im Feld.
   $("item-unit").value = "Stk";
-  $("add-item").addEventListener("submit", (ev) => {
+  $("add-item").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const name = $("item-name").value.trim();
     if (!name) return;
-    const quantity = composeQuantity($("item-qty").value, $("item-unit").value);
+    const typed = { name: $("item-name").value, qty: $("item-qty").value, unit: $("item-unit").value };
+    const quantity = composeQuantity(typed.qty, typed.unit);
     $("item-name").value = "";
     $("item-qty").value = "";
     $("item-unit").value = "Stk";
-    run("POST", "items", { name, quantity });
+    // Scheitert der Aufruf, steht wieder da, was getippt war - sofern nicht schon
+    // der naechste Eintrag im Feld steht.
+    if (!(await run("POST", "items", { name, quantity })) && !$("item-name").value) {
+      $("item-name").value = typed.name;
+      $("item-qty").value = typed.qty;
+      $("item-unit").value = typed.unit;
+    }
   });
   $("clear").addEventListener("click", () => run("POST", "items/clear-checked"));
   $("new-dish").addEventListener("click", () => { editing = { kind: "dish", id: null }; render(board); });

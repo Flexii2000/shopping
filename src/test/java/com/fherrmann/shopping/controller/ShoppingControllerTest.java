@@ -1,6 +1,8 @@
 package com.fherrmann.shopping.controller;
 
 import com.fherrmann.shopping.dto.Board;
+import com.fherrmann.shopping.dto.ClearCheckedRequest;
+import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.model.Item;
 import com.fherrmann.shopping.security.SecurityConfig;
@@ -133,5 +135,28 @@ class ShoppingControllerTest {
         // Ohne Token muss man den Link mit Token ueberhaupt oeffnen koennen;
         // die Seite zeigt dann "Kein Zugang", die API bleibt zu.
         mockMvc.perform(get("/index.html").accept(MediaType.TEXT_HTML)).andExpect(status().isOk());
+    }
+
+    /** Ohne Rumpf wie bisher (Weboberflaeche, aeltere Apps), mit Rumpf die Liste bzw. die Kennungen der App. */
+    @Test
+    void abgehakteEntfernenUndGerichtMitUndOhneRumpf() throws Exception {
+        when(service.clearChecked(eq("joana"), any())).thenReturn(board("joana"));
+        when(service.addDish(eq("joana"), eq("d1"), any())).thenReturn(board("joana"));
+        mockMvc.perform(post("/api/items/clear-checked").header("Authorization", "Bearer token-joana-2"))
+                .andExpect(status().isOk());
+        verify(service).clearChecked("joana", null);
+        mockMvc.perform(post("/api/items/clear-checked").header("Authorization", "Bearer token-joana-2")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"ids\":[\"i1\"]}"))
+                .andExpect(status().isOk());
+        verify(service).clearChecked("joana", new ClearCheckedRequest(List.of("i1")));
+
+        mockMvc.perform(post("/api/dishes/d1/add").header("Authorization", "Bearer token-joana-2"))
+                .andExpect(status().isCreated());
+        verify(service).addDish("joana", "d1", null);
+        mockMvc.perform(post("/api/dishes/d1/add").header("Authorization", "Bearer token-joana-2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"items\":[{\"name\":\"Lauch\",\"id\":\"x\"}]}"))
+                .andExpect(status().isCreated());
+        verify(service).addDish("joana", "d1", new DishAddRequest(List.of(new DishAddRequest.Entry("Lauch", "x"))));
     }
 }

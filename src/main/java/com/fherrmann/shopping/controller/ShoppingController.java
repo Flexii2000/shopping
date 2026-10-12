@@ -1,6 +1,8 @@
 package com.fherrmann.shopping.controller;
 
 import com.fherrmann.shopping.dto.Board;
+import com.fherrmann.shopping.dto.ClearCheckedRequest;
+import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
@@ -65,9 +67,10 @@ public class ShoppingController {
         return service.uncheck(me.getName(), id);
     }
 
+    /** Ohne Rumpf alle abgehakten (Weboberflaeche), mit {@code {ids}} nur diese. */
     @PostMapping("/items/clear-checked")
-    public Board clearChecked(Principal me) {
-        return service.clearChecked(me.getName());
+    public Board clearChecked(Principal me, @RequestBody(required = false) ClearCheckedRequest request) {
+        return service.clearChecked(me.getName(), request);
     }
 
     // MARK: - Gerichte
@@ -89,8 +92,9 @@ public class ShoppingController {
 
     /** Das Gericht als Ganzes auf die Liste - je Zutat ein Eintrag. */
     @PostMapping("/dishes/{id}/add")
-    public ResponseEntity<Board> addDish(Principal me, @PathVariable String id) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.addDish(me.getName(), id));
+    public ResponseEntity<Board> addDish(Principal me, @PathVariable String id,
+                                         @RequestBody(required = false) DishAddRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.addDish(me.getName(), id, request));
     }
 
     // MARK: - Regeln

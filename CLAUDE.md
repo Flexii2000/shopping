@@ -32,6 +32,10 @@ Weboberfläche hier, der Einkaufsliste-Tab in Healthy und die App Einkauf
   Wörterbuch, Fall in `CategorizerTest`. Von Hand gewählte Kategorien
   landen in `learned` und schlagen alles.
 - **Jede Antwort ist das ganze Brett.** Keine Teilantworten.
+- **Die App darf Kennungen vergeben** (`id` beim Anlegen, je Zutat bei
+  `dishes/{id}/add`): dieselbe zweimal legt nichts an, eine in einem gleichnamigen
+  Eintrag aufgegangene trifft diesen (`clientIds`), `clear-checked` mit `ids` löscht
+  nur die genannten. Ohne Kennung alles wie vorher. Schreiber sind `synchronized`.
 
 ## Bauen und prüfen
 

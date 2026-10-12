@@ -1,6 +1,8 @@
 package com.fherrmann.shopping.service;
 
 import com.fherrmann.shopping.dto.Board;
+import com.fherrmann.shopping.dto.ClearCheckedRequest;
+import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
@@ -318,5 +320,108 @@ class ShoppingServiceTest {
         assertEquals("felix", item.addedBy());
         assertNotNull(item.checkedAt());
         assertEquals("joana", item.checkedBy());
+    }
+
+    // MARK: - Kennungen der App (offline angelegt, spaeter nachgesendet)
+
+    private static final String A = "1a2b3c4d-0000-4000-8000-00000000000a";
+    private static final String B = "1a2b3c4d-0000-4000-8000-00000000000b";
+    private static final String C = "1a2b3c4d-0000-4000-8000-00000000000c";
+
+    private Item item(Board board, String name) {
+        return board.items().stream().filter(i -> i.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    /** Die App vergibt die Kennung; nachgesendet zaehlt dasselbe Anlegen nicht noch einmal. */
+    @Test
+    void dieKennungDerAppGiltUndNachgesendetDoppeltNichts() {
+        Board board = service.createItem("felix", new ItemRequest("Milch", "2 l", null, null, A));
+        assertEquals(A, item(board, "Milch").id());
+        board = service.createItem("felix", new ItemRequest("Milch", "2 l", null, null, A));
+        assertEquals(1, board.items().size());
+        assertEquals("2 l", item(board, "Milch").quantity(), "nicht 4 l");
+    }
+
+    /** Geht der neue Eintrag in einem offenen gleichen Namens auf, trifft die Kennung der App diesen. */
+    @Test
+    void eineAufgegangeneKennungTrifftDenZusammengefasstenEintrag() {
+        String joanas = service.createItem("joana", new ItemRequest("Milch", "1 l", null, null)).items().get(0).id();
+        Board board = service.createItem("felix", new ItemRequest("Milch", "2 l", null, null, A));
+        assertEquals(1, board.items().size());
+        assertEquals("3 l", item(board, "Milch").quantity());
+        // Nachgesendet: nicht noch einmal 2 l dazu.
+        board = service.createItem("felix", new ItemRequest("Milch", "2 l", null, null, A));
+        assertEquals("3 l", item(board, "Milch").quantity());
+
+        board = service.check("felix", A);
+        assertEquals(joanas, item(board, "Milch").id());
+        assertNotNull(item(board, "Milch").checkedAt());
+        board = service.uncheck("felix", A);
+        assertNull(item(board, "Milch").checkedAt());
+        board = service.updateItem("felix", A, new ItemRequest("Milch", "4 l", null, null));
+        assertEquals("4 l", item(board, "Milch").quantity());
+        board = service.deleteItem("felix", A);
+        assertTrue(board.items().isEmpty());
+    }
+
+    /** Ein spaet nachgesendetes Anlegen holt keinen Eintrag zurueck, den inzwischen jemand geloescht hat. */
+    @Test
+    void geloeschtBleibtGeloescht() {
+        service.createItem("felix", new ItemRequest("Brot", null, null, null, A));
+        service.deleteItem("joana", A);
+        Board board = service.createItem("felix", new ItemRequest("Brot", null, null, null, A));
+        assertTrue(board.items().isEmpty());
+    }
+
+    @Test
+    void nurKleingeschriebeneUuids() {
+        assertThrows(ResponseStatusException.class,
+                () -> service.createItem("felix", new ItemRequest("Brot", null, null, null, "brot-1")));
+        assertThrows(ResponseStatusException.class,
+                () -> service.createItem("felix", new ItemRequest("Brot", null, null, null, A.toUpperCase())));
+    }
+
+    /** "Abgehakte entfernen" mit Liste: was die andere Person danach abgehakt hat, bleibt. */
+    @Test
+    void abgehakteEntfernenNurFuerDieGenannten() {
+        service.createItem("felix", new ItemRequest("Brot", null, null, null, A));
+        service.createItem("felix", new ItemRequest("Eier", null, null, null, B));
+        service.createItem("felix", new ItemRequest("Salz", null, null, null, C));
+        service.check("felix", A);
+        service.check("joana", B);
+        Board board = service.clearChecked("felix", new ClearCheckedRequest(List.of(A, C)));
+        assertEquals(List.of("Salz", "Eier"), board.items().stream().map(Item::name).toList(),
+                "Brot weg; Eier (nicht genannt) und Salz (nicht abgehakt) bleiben");
+        board = service.clearChecked("joana", null);
+        assertEquals(List.of("Salz"), board.items().stream().map(Item::name).toList(), "ohne Liste alle abgehakten");
+    }
+
+    /** Ein Gericht mit den Kennungen der App: je Zutat die eigene, nachgesendet aendert sich nichts. */
+    @Test
+    void einGerichtMitDenKennungenDerApp() {
+        service.createItem("joana", new ItemRequest("Zwiebeln", "1 Stk", null, null));
+        String dish = service.createDish("felix", new DishRequest("Suppe", List.of(
+                new DishRequest.IngredientRequest("Zwiebeln", "2 Stk"),
+                new DishRequest.IngredientRequest("Lauch", "1 Stange")))).dishes().get(0).id();
+        DishAddRequest request = new DishAddRequest(List.of(
+                new DishAddRequest.Entry("zwiebeln", A), new DishAddRequest.Entry("Lauch", B)));
+        Board board = service.addDish("felix", dish, request);
+        assertEquals(B, item(board, "Lauch").id());
+        assertEquals("3 Stk", item(board, "Zwiebeln").quantity());
+        board = service.addDish("felix", dish, request);
+        assertEquals("3 Stk", item(board, "Zwiebeln").quantity(), "nachgesendet: nichts doppelt");
+        assertEquals(2, board.items().size());
+        board = service.check("felix", A);
+        assertNotNull(item(board, "Zwiebeln").checkedAt(), "die Kennung der Zwiebeln trifft den zusammengefassten Eintrag");
+    }
+
+    /** Der Aufraeumer nimmt auch alte Kennungen mit - nach derselben Frist. */
+    @Test
+    void alteKennungenFliegenRaus() {
+        service.createItem("felix", new ItemRequest("Brot", null, null, null, A));
+        assertEquals(1, stored.get().clientIds().size());
+        at(NOW.plus(Duration.ofDays(91))).cleanup();
+        assertTrue(stored.get().clientIds().isEmpty());
+        assertEquals(1, stored.get().items().size(), "der offene Eintrag bleibt");
     }
 }

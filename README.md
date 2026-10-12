@@ -76,16 +76,16 @@ das ganze Brett** (`Board`); die Clients setzen nichts zusammen.
 | Methode | Pfad | Was |
 |---|---|---|
 | GET | `/api/board` | alles: `me`, sichtbare Einträge, Gerichte, Regeln, `categories` |
-| POST | `/api/items` | `{name, quantity?, note?, category?}` → 201; mit `category` wird die Wahl für den Namen gelernt |
+| POST | `/api/items` | `{name, quantity?, note?, category?, id?}` → 201; mit `category` wird die Wahl für den Namen gelernt; `id` siehe unten |
 | PUT | `/api/items/{id}` | `{name, quantity?, note?, category?}` — fehlende Felder heißen: keine mehr; ohne `category` wird neu geraten |
 | DELETE | `/api/items/{id}` | löschen |
 | POST | `/api/items/{id}/check` | abhaken (idempotent; bei einer Regel: `nextAt` weiterschieben) |
 | DELETE | `/api/items/{id}/check` | Haken zurück (bei offenem Eintrag: nichts) |
-| POST | `/api/items/clear-checked` | alle abgehakten löschen |
+| POST | `/api/items/clear-checked` | alle abgehakten löschen; mit `{ids:[…]}` nur diese, sofern noch abgehakt |
 | POST | `/api/dishes` | `{name, ingredients:[{name, quantity?}]}` → 201; leere Zutatenzeilen fallen weg |
 | PUT | `/api/dishes/{id}` | gleicher Rumpf, ersetzt die Zutaten ganz |
 | DELETE | `/api/dishes/{id}` | löschen, Einträge bleiben |
-| POST | `/api/dishes/{id}/add` | je Zutat ein Eintrag → 201 (400 ohne Zutaten) |
+| POST | `/api/dishes/{id}/add` | je Zutat ein Eintrag → 201 (400 ohne Zutaten); optional `{items:[{name, id}]}` mit den Kennungen der App |
 | POST | `/api/recurring` | `{name, quantity?, everyDays, nextAt?}` → 201, `nextAt` als `yyyy-MM-dd`, ohne = heute |
 | PUT | `/api/recurring/{id}` | gleicher Rumpf; ohne `nextAt` bleibt der bisherige Termin |
 | DELETE | `/api/recurring/{id}` | löschen, ein offener Eintrag bleibt |
@@ -107,9 +107,28 @@ Rundgang-Reihenfolge, darin älteste oben —, dann die heute abgehakten
 (zuletzt abgehakte oben). Fehler kommen als
 Klartext (`Ein Eintrag braucht einen Namen.`).
 
+**Kennungen der App** (seit 2026-10-12): Im Laden fehlt oft das Netz. Die Apps
+zeigen Hinzufügen, Abhaken, Ändern und Löschen deshalb sofort und schicken später.
+Ein neuer Eintrag braucht dafür eine Kennung, bevor der Dienst ihn kennt: die App
+vergibt sie (`id` beim Anlegen, je Zutat bei `dishes/{id}/add`; kleingeschriebene
+UUID, sonst 400 `Die Kennung ist keine UUID.`).
+
+- **Dieselbe Kennung zweimal legt nichts an** — nachgesendet würden aus 2 l Milch
+  sonst 4 l.
+- **Geht der Eintrag in einem offenen gleichen Namens auf**, merkt sich der Dienst
+  in `clientIds`, wohin; Abhaken, Ändern und Löschen mit der Kennung der App treffen
+  dann diesen Eintrag (auch den der anderen Person — gleicher Name, ein Eintrag).
+- **Gelöscht bleibt gelöscht:** ein spät nachgesendetes Anlegen holt nichts zurück.
+- `clear-checked` mit `ids` löscht nur, was die App abgehakt sah — ein Haken, den die
+  andere Person inzwischen gesetzt hat, bleibt stehen.
+- Alte Kennungen räumt der nächtliche Lauf nach `shopping.history-days` weg.
+
+Ohne `id` (Weboberfläche, ältere Apps) bleibt alles wie vorher. Alle Schreiber laufen
+nacheinander (`synchronized`), auch der Stundenlauf der Regeln.
+
 ## Daten
 
-`data/shopping.json` — Liste, Gerichte, Regeln, gelernte Kategorien. Geschrieben wird erst
+`data/shopping.json` — Liste, Gerichte, Regeln, gelernte Kategorien, Kennungen der Apps (`clientIds`, fehlt in älteren Dateien). Geschrieben wird erst
 daneben, dann umbenannt. ⚠️ Auf dem Server nie überschreiben.
 
 ## Betrieb
