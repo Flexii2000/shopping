@@ -140,8 +140,8 @@ nginx `location /shopping-list/` unter `fherrmann.com` **ohne** Privat-Gate.
 # einmalig
 ssh HeimServerRemote 'git clone git@github.com:Flexii2000/shopping.git ~/services/shopping'
 ssh -t HeimServerRemote '~/services/shopping/deploy/setup-shopping.sh'   # gibt die Setup-Links aus
-# später
-ssh -t HeimServerRemote '~/services/shopping/deploy/update-shopping.sh'
+# später (ohne Passwort, auch für Agenten: update-service.sh, SERVER-CONTEXT.md)
+ssh HeimServerLocal '~/services/shopping/deploy/update-shopping.sh'
 ```
 
 Namen ändern oder ein Token tauschen: `/etc/shopping.env`, dann
