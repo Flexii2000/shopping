@@ -11,6 +11,9 @@
   --muted:#898781; --grid:#2c2c2a; --ring:rgba(255,255,255,.10);
   --accent:#4cc27a; --danger:#e06c5c; } }
 * { box-sizing:border-box; }
+/* Vor allem anderen: `hidden` verliert sonst gegen jedes `display:flex` weiter unten -
+   dann stuende die Liste ueber der Rezept-, Chat- oder Kochansicht. */
+[hidden] { display:none !important; }
 body { margin:0; background:var(--plane); color:var(--ink);
   font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
 .wrap { max-width:46rem; margin:0 auto; padding:1.5rem clamp(1rem,2.5vw,2rem) 4rem; }
