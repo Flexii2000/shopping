@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [],
+    "deny": [
+      "Agent",
+      "Bash",
+      "BashOutput",
+      "Edit",
+      "EnterWorktree",
+      "ExitWorktree",
+      "Glob",
+      "Grep",
+      "KillShell",
+      "Monitor",
+      "MultiEdit",
+      "NotebookEdit",
+      "Read",
+      "SendMessage",
+      "Skill",
+      "SlashCommand",
+      "Task",
+      "TaskStop",
+      "TodoWrite",
+      "ToolSearch",
+      "WebFetch",
+      "WebSearch",
+      "Write"
+    ]
+  }
+}

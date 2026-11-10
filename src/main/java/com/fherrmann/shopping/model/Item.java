@@ -6,7 +6,7 @@ import java.time.Instant;
  * Ein Eintrag auf der Liste.
  *
  * @param quantity  freier Text ("2", "500 g"), oder {@code null}
- * @param note      woher der Eintrag kommt - bei Zutaten der Name des Gerichts
+ * @param note      woher der Eintrag kommt - bei Zutaten der Name des Rezepts
  * @param category  der Schluessel einer {@link Category}; in aelteren Dateien
  *                  {@code null}, nach aussen dann "other"
  * @param addedBy   der Name hinter dem Token, oder "regel" bei einem
@@ -14,7 +14,7 @@ import java.time.Instant;
  * @param checkedAt wann abgehakt, oder {@code null}. Abgehaktes bleibt bis
  *                  Mitternacht durchgestrichen sichtbar und faellt dann aus
  *                  der Liste; in der Datei bleibt es noch eine Weile.
- * @param dishId    gesetzt, wenn der Eintrag aus einem Gericht stammt
+ * @param dishId    gesetzt, wenn der Eintrag aus einem Rezept stammt
  * @param ruleId    gesetzt, wenn ihn eine Regel gesetzt hat - abhaken schiebt
  *                  die Regel dann um ihren Rhythmus weiter
  */
@@ -45,7 +45,7 @@ public record Item(
 
     /**
      * Zusammengefasst mit einem zweiten Eintrag desselben Namens: Menge und
-     * Notiz vereint, eine Herkunft (Gericht, Regel) kommt dazu, wenn noch
+     * Notiz vereint, eine Herkunft (Rezept, Regel) kommt dazu, wenn noch
      * keine da ist. Name, Schreibweise und Zeitpunkt des ersten bleiben.
      */
     public Item merged(String quantity, String note, String dishId, String ruleId) {

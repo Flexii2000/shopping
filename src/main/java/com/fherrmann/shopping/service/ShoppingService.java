@@ -6,11 +6,13 @@ import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
+import com.fherrmann.shopping.dto.ScaledDish;
 import com.fherrmann.shopping.model.Category;
 import com.fherrmann.shopping.model.ClientRef;
 import com.fherrmann.shopping.model.Dish;
 import com.fherrmann.shopping.model.Ingredient;
 import com.fherrmann.shopping.model.Item;
+import com.fherrmann.shopping.model.Nutrition;
 import com.fherrmann.shopping.model.RecurringRule;
 import com.fherrmann.shopping.model.ShoppingData;
 import com.fherrmann.shopping.repository.ShoppingRepository;
@@ -34,7 +36,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Die Regeln: eine Liste fuer zwei Personen, Gerichte als Ganzes drauf,
+ * Die Regeln: eine Liste fuer zwei Personen, Rezepte als Ganzes drauf,
  * und was sich von selbst drauf setzt.
  *
  * <p>Die Regeln, die nicht offensichtlich sind:
@@ -52,7 +54,7 @@ import java.util.regex.Pattern;
  * <li><b>Die Liste ist nach Kategorien sortiert</b> - in der Reihenfolge eines
  *     Supermarkt-Rundgangs ({@link Category}). Die Kategorie raet der
  *     {@link Categorizer}; wer sie von Hand setzt, bringt dem Dienst den
- *     Namen bei, und der gilt dann auch fuer Gerichte und Regeln.</li>
+ *     Namen bei, und der gilt dann auch fuer Rezepte und Regeln.</li>
  * <li><b>Die App darf die Kennung eines neuen Eintrags vergeben</b> (seit 12.10.):
  *     ohne Netz steht er sofort auf der Liste und laesst sich abhaken, bevor der
  *     Dienst ihn kennt. Geht er in einem offenen gleichen Namens auf, merkt sich
@@ -69,7 +71,17 @@ import java.util.regex.Pattern;
 @Service
 public class ShoppingService {
 
-    static final int MAX_NAME = 200;
+    public static final int MAX_NAME = 200;
+    /** Grenzen eines Rezepts - auch der Rezept-Agent kuerzt seine Entwuerfe darauf. */
+    public static final int MAX_PORTIONS = 99;
+    public static final int MAX_MINUTES = 1440;
+    public static final int MAX_GRAMS_PER_PORTION = 5000;
+    public static final int MAX_STEPS = 40;
+    public static final int MAX_STEP = 500;
+    public static final int MAX_INGREDIENTS = 60;
+    /** Was der Kalorienzaehler je 100 g hoechstens annimmt - mehr gibt es in keinem Essen. */
+    public static final double MAX_KCAL_PER_100G = 1000;
+    public static final double MAX_MACRO_PER_100G = 100;
     /** Wer einen Eintrag ueber eine Regel bekommt, sieht das als Urheber. */
     static final String BY_RULE = "regel";
     /** Kennungen, die eine App vergibt: kleingeschriebene UUIDs, wie der Dienst sie auch erzeugt. */
@@ -262,7 +274,7 @@ public class ShoppingService {
     /**
      * Eine von Hand gewaehlte Kategorie merken - je normalisiertem Namen.
      * Danach bekommt derselbe Name diese Kategorie ueberall, auch als Zutat
-     * eines Gerichts oder aus einer Regel.
+     * eines Rezepts oder aus einer Regel.
      */
     private static ShoppingData learn(ShoppingData data, String name, String categoryKey) {
         if (categoryKey == null) {
@@ -361,37 +373,100 @@ public class ShoppingService {
                 .filter(i -> !(isChecked(i) && ids.contains(i.id()))).toList()), me);
     }
 
-    // MARK: - Gerichte
+    // MARK: - Rezepte (im Brett und in der Datei weiter "dishes")
 
     public synchronized Board createDish(String me, DishRequest request) {
-        Dish dish = new Dish(ShoppingRepository.newId(), cleanDishName(request), ingredients(request), Instant.now(clock));
+        createRecipe(me, request, null);
+        return board(me);
+    }
+
+    /**
+     * Legt ein Rezept an und gibt es zurueck - der Rezept-Chat braucht die Kennung, um
+     * am Entwurf zu vermerken, was aus ihm wurde.
+     *
+     * @param source {@code "chat"} fuer einen gespeicherten Entwurf, sonst {@code null}
+     */
+    public synchronized Dish createRecipe(String me, DishRequest request, String source) {
+        String name = cleanDishName(request);
         ShoppingData data = repository.load();
+        requireUniqueName(data, name, null);
+        Integer portions = bounded(request.portions(), MAX_PORTIONS, "Portionen");
+        Integer minutes = bounded(request.minutes(), MAX_MINUTES, "Minuten");
+        Double grams = cleanGrams(request.gramsPerPortion());
+        Nutrition nutrition = cleanNutrition(request.nutrition());
+        requirePlausible(nutrition, grams);
+        Dish dish = new Dish(ShoppingRepository.newId(), name, ingredients(request, null), Instant.now(clock),
+                portions, minutes, cleanSteps(request.steps()), nutrition, grams, source, me);
         List<Dish> dishes = new ArrayList<>(data.dishes());
         dishes.add(dish);
-        return save(data.withDishes(dishes), me);
+        repository.save(data.withDishes(dishes));
+        return dish;
     }
 
+    /**
+     * Aendert ein Rezept. <b>Fehlt ein Feld, bleibt es</b> - aeltere Apps schicken nur
+     * Name und Zutaten, und ihr "Speichern" darf Schritte und Naehrwerte nicht loeschen.
+     * Der leere Wert loescht ({@code steps: []}, {@code portions: 0}, {@code minutes: 0},
+     * {@code gramsPerPortion: 0}, {@code nutrition: {}}). Nur die Zutaten ersetzen die
+     * alten ganz, wie immer.
+     */
     public synchronized Board updateDish(String me, String id, DishRequest request) {
         String name = cleanDishName(request);
-        List<Ingredient> ingredients = ingredients(request);
         ShoppingData data = repository.load();
         Dish existing = findDish(data, id);
-        return save(data.withDishes(data.dishes().stream()
-                .map(d -> d.id().equals(id) ? new Dish(existing.id(), name, ingredients, existing.createdAt()) : d)
-                .toList()), me);
+        // Nur beim Umbenennen pruefen: zwei gleichnamige von frueher muessen sich
+        // weiter bearbeiten lassen.
+        if (!nameKey(name).equals(nameKey(existing.name()))) {
+            requireUniqueName(data, name, id);
+        }
+        Integer portions = request.portions() == null ? existing.portions()
+                : bounded(request.portions(), MAX_PORTIONS, "Portionen");
+        Integer minutes = request.minutes() == null ? existing.minutes()
+                : bounded(request.minutes(), MAX_MINUTES, "Minuten");
+        Double grams = request.gramsPerPortion() == null ? existing.gramsPerPortion()
+                : cleanGrams(request.gramsPerPortion());
+        Nutrition nutrition = request.nutrition() == null ? existing.nutrition()
+                : cleanNutrition(request.nutrition());
+        List<String> steps = request.steps() == null ? existing.steps() : cleanSteps(request.steps());
+        requirePlausible(nutrition, grams);
+        Dish updated = existing.withContent(name, ingredients(request, existing), portions, minutes, steps,
+                nutrition, grams);
+        return save(data.withDishes(data.dishes().stream().map(d -> d.id().equals(id) ? updated : d).toList()), me);
     }
 
-    /** Loescht das Gericht. Eintraege, die daraus schon auf der Liste stehen, bleiben. */
+    /** Loescht das Rezept. Eintraege, die daraus schon auf der Liste stehen, bleiben. */
     public synchronized Board deleteDish(String me, String id) {
         ShoppingData data = repository.load();
         findDish(data, id);
         return save(data.withDishes(data.dishes().stream().filter(d -> !d.id().equals(id)).toList()), me);
     }
 
+    /** Ein Rezept, wie es gespeichert ist - fuer "Kochen". */
+    public Dish dish(String id) {
+        return findDish(repository.load(), id);
+    }
+
     /**
-     * Das Gericht als Ganzes auf die Liste: je Zutat ein Eintrag, mit dem
-     * Gerichtnamen als Notiz. Doppelte sind erlaubt - zwei Gerichte mit
-     * Zwiebeln sind zwei Eintraege, die Mengen unterscheiden sich ja.
+     * Die Zutaten eines Rezepts fuer eine andere Portionenzahl. Gerechnet wird hier und
+     * nicht in der Weboberflaeche - die zeichnet nur, was der Dienst liefert.
+     */
+    public ScaledDish scaled(String id, Integer portions) {
+        Dish dish = findDish(repository.load(), id);
+        int base = basePortions(dish);
+        int wanted = portions == null ? base : validPortions(portions);
+        List<ScaledDish.ScaledIngredient> ingredients = new ArrayList<>();
+        for (Ingredient ingredient : dish.ingredients()) {
+            QuantityParser.Scaled scaled = QuantityParser.scale(ingredient.quantity(), wanted, base);
+            ingredients.add(new ScaledDish.ScaledIngredient(ingredient.name(), scaled.quantity(),
+                    ingredient.pantry(), scaled.scaled()));
+        }
+        return new ScaledDish(dish.id(), wanted, base, ingredients);
+    }
+
+    /**
+     * Das Rezept als Ganzes auf die Liste: je Zutat ein Eintrag, mit dem Namen des
+     * Rezepts als Notiz. Steht eine Zutat schon offen auf der Liste, geht sie in
+     * diesem Eintrag auf - die Mengen kommen zusammen.
      */
     public Board addDish(String me, String id) {
         return addDish(me, id, null);
@@ -399,14 +474,29 @@ public class ShoppingService {
 
     /**
      * Mit den Kennungen, die die App je Zutat vergeben hat (Zuordnung ueber den Namen).
-     * Kennt der Dienst eine davon schon, kam dasselbe Gericht schon an - nachgesendet,
+     * Kennt der Dienst eine davon schon, kam dasselbe Rezept schon an - nachgesendet,
      * weil die Antwort verloren ging -, und es aendert sich nichts.
+     *
+     * <p>Mit {@code portions} werden die Mengen von den Portionen des Rezepts
+     * umgerechnet, bevor sie auf die Liste gehen; {@code skip} nennt Zutaten, die nicht
+     * mit sollen. Ohne beides alles wie vor den Rezepten.
      */
     public synchronized Board addDish(String me, String id, DishAddRequest request) {
         ShoppingData data = repository.load();
         Dish dish = findDish(data, id);
         if (dish.ingredients().isEmpty()) {
             throw badRequest("„" + dish.name() + "“ hat keine Zutaten.");
+        }
+        Integer portions = request == null ? null : request.portions();
+        int base = portions == null ? 1 : basePortions(dish);
+        int wanted = portions == null ? 1 : validPortions(portions);
+        Set<String> skipped = new HashSet<>();
+        if (request != null && request.skip() != null) {
+            for (String name : request.skip()) {
+                if (name != null) {
+                    skipped.add(nameKey(name));
+                }
+            }
         }
         Map<String, String> clientIdByName = new HashMap<>();
         if (request != null && request.items() != null) {
@@ -424,10 +514,16 @@ public class ShoppingService {
         List<Item> items = new ArrayList<>(data.items());
         Map<String, String> clientToItem = new HashMap<>();
         for (Ingredient ingredient : dish.ingredients()) {
+            if (skipped.contains(nameKey(ingredient.name()))) {
+                continue;
+            }
+            // Ohne portions sind base und wanted gleich: die Menge bleibt, wie sie ist.
+            String quantity = portions == null ? ingredient.quantity()
+                    : QuantityParser.scale(ingredient.quantity(), wanted, base).quantity();
             String clientId = clientIdByName.remove(nameKey(ingredient.name()));
             Item same = openItemNamed(items, ingredient.name());
             if (same != null) {
-                items.set(items.indexOf(same), same.merged(QuantityParser.merge(same.quantity(), ingredient.quantity()),
+                items.set(items.indexOf(same), same.merged(QuantityParser.merge(same.quantity(), quantity),
                         mergeNotes(same.note(), dish.name()), dish.id(), null));
                 if (clientId != null) {
                     clientToItem.put(clientId, same.id());
@@ -435,8 +531,8 @@ public class ShoppingService {
                 continue;
             }
             String itemId = clientId != null ? clientId : ShoppingRepository.newId();
-            items.add(new Item(itemId, ingredient.name(), ingredient.quantity(), dish.name(),
-                    categorize(data, ingredient.name(), ingredient.quantity()), now, me, null, null, dish.id(), null));
+            items.add(new Item(itemId, ingredient.name(), quantity, dish.name(),
+                    categorize(data, ingredient.name(), quantity), now, me, null, null, dish.id(), null));
             if (clientId != null) {
                 clientToItem.put(clientId, itemId);
             }
@@ -444,6 +540,20 @@ public class ShoppingService {
             // erhalten bleiben - die Sortierung ist stabil, das reicht.
         }
         return save(remember(data.withItems(items), clientToItem), me);
+    }
+
+    private static int basePortions(Dish dish) {
+        if (dish.portions() == null) {
+            throw badRequest("„" + dish.name() + "“ hat keine Portionsangabe.");
+        }
+        return dish.portions();
+    }
+
+    private static int validPortions(int portions) {
+        if (portions < 1 || portions > MAX_PORTIONS) {
+            throw badRequest("Portionen: 1 bis " + MAX_PORTIONS + ".");
+        }
+        return portions;
     }
 
     // MARK: - Regeln
@@ -561,7 +671,7 @@ public class ShoppingService {
 
     private static Dish findDish(ShoppingData data, String id) {
         return data.dishes().stream().filter(d -> d.id().equals(id)).findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Gericht nicht gefunden."));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rezept nicht gefunden."));
     }
 
     private static RecurringRule findRule(ShoppingData data, String id) {
@@ -570,10 +680,31 @@ public class ShoppingService {
     }
 
     private static String cleanDishName(DishRequest request) {
-        return cleanName(request == null ? null : request.name(), "Ein Gericht braucht einen Namen.");
+        return cleanName(request == null ? null : request.name(), "Ein Rezept braucht einen Namen.");
     }
 
-    private static List<Ingredient> ingredients(DishRequest request) {
+    /**
+     * Ein Name, ein Rezept - Gross-/Kleinschreibung und Leerraum zaehlen nicht. Der
+     * Kalorienzaehler ordnet das gekochte Rezept ueber den Namen zu; zwei gleichnamige
+     * ueberschrieben sich dort gegenseitig.
+     *
+     * @param exceptId das Rezept, das gerade umbenannt wird, oder {@code null}
+     */
+    private static void requireUniqueName(ShoppingData data, String name, String exceptId) {
+        String key = nameKey(name);
+        boolean taken = data.dishes().stream()
+                .anyMatch(d -> !d.id().equals(exceptId) && nameKey(d.name()).equals(key));
+        if (taken) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ein Rezept mit diesem Namen gibt es schon.");
+        }
+    }
+
+    /**
+     * Die Zutaten aus dem Rumpf. Fehlt bei einer {@code pantry}, behaelt sie das
+     * Kennzeichen der gleichnamigen Zutat von vorher - eine aeltere App, die es nicht
+     * kennt, soll es beim Speichern nicht loeschen.
+     */
+    private static List<Ingredient> ingredients(DishRequest request, Dish existing) {
         List<Ingredient> result = new ArrayList<>();
         if (request.ingredients() == null) {
             return result;
@@ -588,9 +719,104 @@ public class ShoppingService {
                 throw badRequest("Eine Zutat darf höchstens " + MAX_NAME + " Zeichen haben.");
             }
             QuantityParser.Split split = QuantityParser.resolve(name, clean(ingredient.quantity()));
-            result.add(new Ingredient(split.name(), split.quantity()));
+            Boolean pantry = ingredient.pantry();
+            if (pantry == null && existing != null) {
+                String key = nameKey(split.name());
+                pantry = existing.ingredients().stream()
+                        .filter(i -> nameKey(i.name()).equals(key)).findFirst()
+                        .map(Ingredient::pantry).orElse(false);
+            }
+            result.add(new Ingredient(split.name(), split.quantity(), pantry));
+        }
+        if (result.size() > MAX_INGREDIENTS) {
+            throw badRequest("Ein Rezept darf höchstens " + MAX_INGREDIENTS + " Zutaten haben.");
         }
         return result;
+    }
+
+    /** Leer und 0 heissen: keine Angabe. */
+    private static Integer bounded(Integer value, int max, String what) {
+        if (value == null || value == 0) {
+            return null;
+        }
+        if (value < 1 || value > max) {
+            throw badRequest(what + ": 1 bis " + max + ".");
+        }
+        return value;
+    }
+
+    private static Double cleanGrams(Double value) {
+        if (value == null || value == 0) {
+            return null;
+        }
+        if (value.isNaN() || value < 1 || value > MAX_GRAMS_PER_PORTION) {
+            throw badRequest("Das Gewicht einer Portion: 1 bis " + MAX_GRAMS_PER_PORTION + " g.");
+        }
+        return value;
+    }
+
+    private static List<String> cleanSteps(List<String> raw) {
+        List<String> steps = new ArrayList<>();
+        if (raw == null) {
+            return steps;
+        }
+        for (String line : raw) {
+            String step = clean(line);
+            if (step == null) {
+                continue;
+            }
+            if (step.length() > MAX_STEP) {
+                throw badRequest("Ein Schritt darf höchstens " + MAX_STEP + " Zeichen haben.");
+            }
+            steps.add(step);
+        }
+        if (steps.size() > MAX_STEPS) {
+            throw badRequest("Ein Rezept darf höchstens " + MAX_STEPS + " Schritte haben.");
+        }
+        return steps;
+    }
+
+    /** Alle vier oder keiner; ganz ohne Werte heisst: keine Naehrwerte. */
+    private static Nutrition cleanNutrition(DishRequest.NutritionRequest raw) {
+        if (raw == null || (raw.kcal() == null && raw.proteinG() == null && raw.carbsG() == null && raw.fatG() == null)) {
+            return null;
+        }
+        Double[] values = {raw.kcal(), raw.proteinG(), raw.carbsG(), raw.fatG()};
+        for (Double value : values) {
+            if (value == null) {
+                throw badRequest("Nährwerte brauchen kcal, Eiweiß, Kohlenhydrate und Fett.");
+            }
+            if (value.isNaN() || value.isInfinite() || value < 0) {
+                throw badRequest("Nährwerte können nicht negativ sein.");
+            }
+        }
+        return new Nutrition(raw.kcal(), raw.proteinG(), raw.carbsG(), raw.fatG());
+    }
+
+    /**
+     * Naehrwerte gelten je Portion und brauchen ihr Gewicht - der Kalorienzaehler
+     * rechnet je 100 g. Was dort nicht hineinpasst, wird schon hier abgelehnt, nicht
+     * erst beim Kochen.
+     */
+    private static void requirePlausible(Nutrition nutrition, Double gramsPerPortion) {
+        if (nutrition == null) {
+            return;
+        }
+        if (gramsPerPortion == null) {
+            throw badRequest("Nährwerte brauchen das Gewicht einer Portion.");
+        }
+        if (!fitsFood(nutrition, gramsPerPortion)) {
+            throw badRequest("Die Nährwerte passen nicht zum Gewicht der Portion.");
+        }
+    }
+
+    /** Ob die Werte je 100 g in die Grenzen des Kalorienzaehlers passen. */
+    public static boolean fitsFood(Nutrition nutrition, double gramsPerPortion) {
+        double factor = 100 / gramsPerPortion;
+        return nutrition.kcal() * factor <= MAX_KCAL_PER_100G
+                && nutrition.proteinG() * factor <= MAX_MACRO_PER_100G
+                && nutrition.carbsG() * factor <= MAX_MACRO_PER_100G
+                && nutrition.fatG() * factor <= MAX_MACRO_PER_100G;
     }
 
     private static String cleanRuleName(RecurringRequest request) {

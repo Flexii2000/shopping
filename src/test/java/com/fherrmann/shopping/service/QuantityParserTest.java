@@ -1,9 +1,17 @@
 package com.fherrmann.shopping.service;
 
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.io.InputStream;
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Mengen im Namen erkennen - und dort lassen, wo keine gemeint ist. */
 class QuantityParserTest {
@@ -76,5 +84,82 @@ class QuantityParserTest {
         assertEquals("200 g", QuantityParser.normalize("200 Gramm"));
         assertEquals("eine Handvoll", QuantityParser.normalize("eine Handvoll"));
         assertNull(QuantityParser.resolve("Bananen", "  ").quantity());
+    }
+
+    // MARK: - Umrechnen auf eine andere Portionenzahl
+
+    /**
+     * Dieselben Beispiele rechnet die App nach ({@code ShoppingQuantity.scale} in
+     * cockpit-ios, {@code Tests/ShoppingQuantityTests.swift}) - die Datei ist die
+     * gemeinsame Wahrheit ueber die Rundung.
+     */
+    @Test
+    void rechnetDieGemeinsamenBeispieleUm() throws Exception {
+        JsonNode vectors;
+        try (InputStream in = getClass().getResourceAsStream("/scale-vectors.json")) {
+            vectors = JsonMapper.builder().build().readTree(in).path("vectors");
+        }
+        assertTrue(vectors.size() >= 30, "die Beispiele fehlen");
+        for (JsonNode vector : vectors) {
+            String quantity = vector.path("quantity").isNull() ? null : vector.path("quantity").asString();
+            String expected = vector.path("expected").isNull() ? null : vector.path("expected").asString();
+            QuantityParser.Scaled scaled = QuantityParser.scale(quantity,
+                    vector.path("portions").asInt(), vector.path("base").asInt());
+            assertEquals(expected, scaled.quantity(), "Menge: " + vector);
+            assertEquals(vector.path("scaled").asBoolean(), scaled.scaled(), "scaled: " + vector);
+        }
+    }
+
+    @Test
+    void rechnetJedenTeilEinerZusammengefasstenMengeEinzeln() {
+        // So schreibt merge zwei Einheiten nebeneinander - und so liest scale sie wieder.
+        String merged = QuantityParser.merge("500 g", "1 Pck");
+        assertEquals("250 g + 0,5 Pck", QuantityParser.scale(merged, 1, 2).quantity());
+        // Was auf der Liste zusammengezaehlt wird, bleibt ehrlich: kein Aufrunden auf ganze Packungen.
+        assertEquals("1,5 Pck", QuantityParser.scale("1 Pck", 3, 2).quantity());
+    }
+
+    @Test
+    void wasSichNichtLesenLaesstBleibtUndSagtDas() {
+        QuantityParser.Scaled handful = QuantityParser.scale("eine Handvoll", 6, 2);
+        assertEquals("eine Handvoll", handful.quantity());
+        assertFalse(handful.scaled());
+        assertFalse(QuantityParser.scale("nach Geschmack", 3, 2).scaled());
+        assertFalse(QuantityParser.scale("1 1/2 Stk", 3, 2).scaled());
+        // Ohne Menge gibt es nichts umzurechnen - und nichts, was blass dastehen muesste.
+        assertTrue(QuantityParser.scale(null, 3, 2).scaled());
+        assertNull(QuantityParser.scale("  ", 3, 2).quantity());
+    }
+
+    @Test
+    void setztZahlUndEinheitDesAgentenZusammen() {
+        assertEquals("250 g", QuantityParser.compose(new BigDecimal("250"), "g"));
+        assertEquals("250 g", QuantityParser.compose(new BigDecimal("250.0"), "Gramm"));
+        assertEquals("1,5 l", QuantityParser.compose(new BigDecimal("1.5"), "l"));
+        assertEquals("2 EL", QuantityParser.compose(new BigDecimal("2"), "EL"));
+        assertEquals("1 Dose", QuantityParser.compose(BigDecimal.ONE, "Dose"));
+        assertEquals("2 Dosen", QuantityParser.compose(new BigDecimal("2"), "Dosen"));
+        assertEquals("3 Stk", QuantityParser.compose(new BigDecimal("3"), null));
+        assertEquals("3 Stk", QuantityParser.compose(new BigDecimal("3"), " "));
+        // Eine Einheit, die die Tabelle nicht kennt, bleibt Text: sichtbar, aber nicht umrechenbar.
+        assertEquals("2 Zehen", QuantityParser.compose(new BigDecimal("2"), "Zehen"));
+        assertFalse(QuantityParser.scale("2 Zehen", 4, 2).scaled());
+        assertNull(QuantityParser.compose(null, null));
+        assertNull(QuantityParser.compose(BigDecimal.ZERO, ""));
+        assertEquals("1 Prise", QuantityParser.compose(null, "Prise"));
+    }
+
+    @Test
+    void nenntDieEinheitenInDerGespeichertenSchreibweise() {
+        List<String> units = QuantityParser.units();
+        assertEquals("Stk", units.get(0));
+        assertTrue(units.containsAll(List.of("g", "kg", "ml", "l", "EL", "TL", "Pck", "Dose", "Prise", "Bund")), units.toString());
+        assertEquals(units.size(), units.stream().distinct().count());
+        // Jede laesst sich lesen, so wie sie dasteht - sonst koennte der Agent sie nicht benutzen.
+        for (String unit : units) {
+            String text = QuantityParser.compose(new BigDecimal("3"), unit);
+            assertEquals(text, QuantityParser.normalize(text), unit);
+            assertTrue(QuantityParser.scale(text, 4, 2).scaled(), unit);
+        }
     }
 }

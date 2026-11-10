@@ -1,6 +1,7 @@
 package com.fherrmann.shopping.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +27,11 @@ import java.util.regex.Pattern;
  * die fuer jeden Client gilt, auch fuer das Web. Beide schreiben dieselbe
  * Form: Zahl, Leerzeichen, Einheit - Abkuerzung oder Wort in Einzahl bzw.
  * Mehrzahl ("1 Dose", "2 Dosen").
+ *
+ * <p>Seit den Rezepten rechnet er Mengen auch auf eine andere Portionenzahl um
+ * ({@link #scale}). Die Rundung steht dort; die App rechnet nach derselben Tabelle
+ * ({@code ShoppingQuantity.scale}), beide gegen dieselben Beispiele
+ * ({@code src/test/resources/scale-vectors.json}).
  */
 public final class QuantityParser {
 
@@ -43,10 +49,24 @@ public final class QuantityParser {
     private record Phrase(Quantity quantity, int used) {
     }
 
+    /**
+     * Eine umgerechnete Menge.
+     *
+     * @param quantity die Menge fuer die neue Portionenzahl - oder unveraendert, wenn sie
+     *                 sich nicht lesen liess
+     * @param scaled   falsch, wenn die Menge so dasteht, wie sie gespeichert ist, obwohl
+     *                 umgerechnet werden sollte ("eine Handvoll"). Die Oberflaechen zeigen
+     *                 sie dann blasser.
+     */
+    public record Scaled(String quantity, boolean scaled) {
+    }
+
     private static final Pattern DIGITS = Pattern.compile("\\d+(?:[.,]\\d+)?");
     private static final Pattern GLUED = Pattern.compile("(\\d+(?:[.,]\\d+)?)([^\\d\\s.,]+\\.?)");
 
     private static final Map<String, String> UNITS = new HashMap<>();
+    /** Die Einheiten in der Schreibweise, die gespeichert wird - in der Reihenfolge der Tabelle. */
+    private static final List<String> CANONICAL = new ArrayList<>();
     private static final Map<String, String> PLURALS = new HashMap<>();
     private static final Map<String, String> NUMBERS = new HashMap<>();
 
@@ -125,9 +145,21 @@ public final class QuantityParser {
     }
 
     private static void unit(String canonical, String... names) {
+        CANONICAL.add(canonical);
         for (String name : names) {
             UNITS.put(name, canonical);
         }
+        // Die Schreibweise selbst gilt auch ("EL", "Tüte"), nicht nur ihre Kuerzel.
+        UNITS.putIfAbsent(fold(canonical), canonical);
+    }
+
+    /**
+     * Die Einheiten, wie sie gespeichert werden ("Stk", "g", "Dose"). Der Rezept-Agent
+     * darf genau diese nennen ({@code deploy/recipe-agent/CLAUDE.md}); ein Test haelt
+     * beide Listen gleich.
+     */
+    public static List<String> units() {
+        return List.copyOf(CANONICAL);
     }
 
     private static void number(String value, String... words) {
@@ -206,6 +238,85 @@ public final class QuantityParser {
         String x = normalize(a);
         String y = normalize(b);
         return x.equalsIgnoreCase(y) ? x : x + " + " + y;
+    }
+
+    /**
+     * Die Menge fuer {@code portions} statt {@code basePortions} Portionen.
+     *
+     * <p>Mehrere Teile ("500 g + 1 Pck", so schreibt {@link #merge}) werden einzeln
+     * gerechnet. Laesst sich einer nicht lesen ("eine Handvoll"), bleibt die ganze
+     * Menge, wie sie ist - lieber unveraendert als halb gerechnet.
+     *
+     * <p>Gerundet wird kaufmaennisch, je nach Einheit:
+     * <ul>
+     * <li>{@code g}, {@code ml}: ab 10 auf ganze, darunter auf eine Nachkommastelle</li>
+     * <li>{@code kg}, {@code l}, {@code cl}, {@code Pfund}: auf zwei Nachkommastellen</li>
+     * <li>alles andere (Stk, Dose, EL ...): auf halbe</li>
+     * </ul>
+     * Nie auf null: was sich wegrunden wuerde, bleibt beim kleinsten Schritt. Keine
+     * Umrechnung zwischen Einheiten und kein Aufrunden auf ganze Packungen - auf der
+     * Liste werden Mengen zusammengezaehlt, und die Summe soll stimmen.
+     */
+    public static Scaled scale(String quantity, int portions, int basePortions) {
+        if (quantity == null || quantity.isBlank()) {
+            return new Scaled(null, true);
+        }
+        if (portions == basePortions || portions < 1 || basePortions < 1) {
+            return new Scaled(normalize(quantity), true);
+        }
+        List<String> parts = new ArrayList<>();
+        for (String piece : quantity.strip().split(" \\+ ")) {
+            Phrase phrase = whole(piece);
+            if (phrase == null) {
+                return new Scaled(normalize(quantity), false);
+            }
+            String unit = phrase.quantity().unit();
+            BigDecimal amount = decimal(phrase.quantity().amount())
+                    .multiply(BigDecimal.valueOf(portions))
+                    .divide(BigDecimal.valueOf(basePortions), 6, RoundingMode.HALF_UP);
+            parts.add(new Quantity(plain(rounded(amount, unit)), unit).text());
+        }
+        return new Scaled(String.join(" + ", parts), true);
+    }
+
+    private static BigDecimal rounded(BigDecimal amount, String unit) {
+        BigDecimal step;
+        BigDecimal value;
+        switch (unit) {
+            case "g", "ml" -> {
+                boolean whole = amount.compareTo(BigDecimal.TEN) >= 0;
+                step = whole ? BigDecimal.ONE : new BigDecimal("0.1");
+                value = amount.setScale(whole ? 0 : 1, RoundingMode.HALF_UP);
+            }
+            case "kg", "l", "cl", "Pfund" -> {
+                step = new BigDecimal("0.01");
+                value = amount.setScale(2, RoundingMode.HALF_UP);
+            }
+            default -> {
+                step = new BigDecimal("0.5");
+                value = amount.multiply(BigDecimal.valueOf(2)).setScale(0, RoundingMode.HALF_UP)
+                        .divide(BigDecimal.valueOf(2));
+            }
+        }
+        return value.compareTo(step) < 0 ? step : value;
+    }
+
+    /**
+     * Zahl und Einheit zu einer Menge in der gespeicherten Schreibweise - fuer Entwuerfe
+     * des Rezept-Agenten, der beides getrennt liefert. Eine Einheit, die die Tabelle
+     * nicht kennt ("Zehen"), bleibt als Text stehen: sichtbar, aber nicht umrechenbar.
+     * Ohne Einheit sind es Stueck.
+     */
+    public static String compose(BigDecimal amount, String unit) {
+        String raw = unit == null ? "" : unit.strip();
+        if (amount == null || amount.signum() <= 0) {
+            return raw.isEmpty() ? null : normalize(raw);
+        }
+        if (raw.isEmpty()) {
+            return new Quantity(plain(amount), "Stk").text();
+        }
+        String known = unit(raw);
+        return known == null ? plain(amount) + " " + raw : new Quantity(plain(amount), known).text();
     }
 
     private static Phrase whole(String text) {

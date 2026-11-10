@@ -6,11 +6,16 @@ import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
+import com.fherrmann.shopping.dto.ScaledDish;
+import com.fherrmann.shopping.model.Dish;
+import com.fherrmann.shopping.model.Ingredient;
 import com.fherrmann.shopping.model.Item;
+import com.fherrmann.shopping.model.Nutrition;
 import com.fherrmann.shopping.model.ShoppingData;
 import com.fherrmann.shopping.repository.ShoppingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
@@ -18,10 +23,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -423,5 +431,259 @@ class ShoppingServiceTest {
         at(NOW.plus(Duration.ofDays(91))).cleanup();
         assertTrue(stored.get().clientIds().isEmpty());
         assertEquals(1, stored.get().items().size(), "der offene Eintrag bleibt");
+    }
+
+    // MARK: - Rezepte: Portionen, Schritte, Naehrwerte
+
+    private static DishRequest.IngredientRequest zutat(String name, String quantity, Boolean pantry) {
+        return new DishRequest.IngredientRequest(name, quantity, pantry);
+    }
+
+    /** Pasta mit Feta fuer zwei: zwei Einkaeufe, ein Vorrat, eine Zutat ohne Menge. */
+    private static DishRequest pasta() {
+        return new DishRequest("Pasta mit Feta",
+                List.of(zutat("Penne", "250 g", false), zutat("Feta", "1 Pck", null),
+                        zutat("Olivenöl", "2 EL", true), zutat("Salz", null, true)),
+                2, 25, List.of("Wasser aufsetzen.", "  ", "Penne kochen."),
+                new DishRequest.NutritionRequest(640.0, 24.0, 78.0, 24.0), 420.0);
+    }
+
+    private Dish onlyDish() {
+        assertEquals(1, stored.get().dishes().size());
+        return stored.get().dishes().get(0);
+    }
+
+    private static void assertStatus(HttpStatus expected, Runnable call) {
+        ResponseStatusException e = assertThrows(ResponseStatusException.class, call::run);
+        assertEquals(expected, e.getStatusCode(), e.getReason());
+    }
+
+    @Test
+    void einRezeptMitPortionenSchrittenUndNaehrwerten() {
+        Board board = service.createDish("joana", pasta());
+        Dish dish = board.dishes().get(0);
+        assertEquals("Pasta mit Feta", dish.name());
+        assertEquals(2, dish.portions());
+        assertEquals(25, dish.minutes());
+        assertEquals(List.of("Wasser aufsetzen.", "Penne kochen."), dish.steps(), "leere Zeilen sind keine Schritte");
+        assertEquals(new Nutrition(640.0, 24.0, 78.0, 24.0), dish.nutrition());
+        assertEquals(420.0, dish.gramsPerPortion());
+        assertEquals("joana", dish.createdBy());
+        assertNull(dish.source(), "von Hand angelegt");
+        assertEquals(List.of(new Ingredient("Penne", "250 g", false), new Ingredient("Feta", "1 Pck", false),
+                new Ingredient("Olivenöl", "2 EL", true), new Ingredient("Salz", null, true)), dish.ingredients());
+
+        // Aus dem Rezept-Chat gespeichert traegt es seine Herkunft.
+        Dish fromChat = service.createRecipe("felix", new DishRequest("Curry", List.of(zutat("Reis", "200 g", null))), "chat");
+        assertEquals("chat", fromChat.source());
+        assertEquals("felix", fromChat.createdBy());
+        assertEquals(fromChat, service.dish(fromChat.id()));
+    }
+
+    /** Aeltere Apps schicken beim Speichern nur Name und Zutaten - der Rest des Rezepts muss das ueberleben. */
+    @Test
+    void einAelteresSpeichernLoeschtNichts() {
+        String id = service.createDish("felix", pasta()).dishes().get(0).id();
+
+        service.updateDish("joana", id, new DishRequest("Pasta mit Feta und Tomaten", List.of(
+                new DishRequest.IngredientRequest("Penne", "300 g"),
+                new DishRequest.IngredientRequest("olivenöl", "3 EL"),
+                new DishRequest.IngredientRequest("Tomaten", "4"))));
+
+        Dish dish = onlyDish();
+        assertEquals("Pasta mit Feta und Tomaten", dish.name());
+        assertEquals(2, dish.portions());
+        assertEquals(25, dish.minutes());
+        assertEquals(List.of("Wasser aufsetzen.", "Penne kochen."), dish.steps());
+        assertEquals(new Nutrition(640.0, 24.0, 78.0, 24.0), dish.nutrition());
+        assertEquals(420.0, dish.gramsPerPortion());
+        assertEquals("felix", dish.createdBy(), "wer es angelegt hat, bleibt");
+        // Die Zutaten ersetzen die alten wie immer; das Vorrats-Kennzeichen erbt die gleichnamige.
+        assertEquals(List.of(new Ingredient("Penne", "300 g", false), new Ingredient("olivenöl", "3 EL", true),
+                new Ingredient("Tomaten", "4 Stk", false)), dish.ingredients());
+
+        // Ausdruecklich gesetzt gilt, was dasteht.
+        service.updateDish("joana", id, new DishRequest("Pasta mit Feta und Tomaten",
+                List.of(zutat("Olivenöl", "3 EL", false)), null, null, null, null, null));
+        assertEquals(List.of(new Ingredient("Olivenöl", "3 EL", false)), onlyDish().ingredients());
+    }
+
+    @Test
+    void derLeereWertLoescht() {
+        String id = service.createDish("felix", pasta()).dishes().get(0).id();
+        List<DishRequest.IngredientRequest> zutaten = List.of(zutat("Penne", "250 g", null));
+
+        // Das Gewicht allein loeschen geht nicht - die Naehrwerte haengen daran.
+        assertStatus(HttpStatus.BAD_REQUEST,
+                () -> service.updateDish("felix", id, new DishRequest("Pasta mit Feta", zutaten, null, null, null, null, 0.0)));
+
+        service.updateDish("felix", id, new DishRequest("Pasta mit Feta", zutaten, 0, 0, List.of(),
+                new DishRequest.NutritionRequest(null, null, null, null), 0.0));
+        Dish dish = onlyDish();
+        assertNull(dish.portions());
+        assertNull(dish.minutes());
+        assertEquals(List.of(), dish.steps());
+        assertNull(dish.nutrition());
+        assertNull(dish.gramsPerPortion());
+
+        // Und wieder setzen.
+        service.updateDish("felix", id, new DishRequest("Pasta mit Feta", zutaten, 4, null, List.of("Kochen."), null, null));
+        assertEquals(4, onlyDish().portions());
+        assertEquals(List.of("Kochen."), onlyDish().steps());
+    }
+
+    /** Der Kalorienzaehler ordnet das gekochte Rezept ueber den Namen zu - also ein Name, ein Rezept. */
+    @Test
+    void rezeptnamenSindEindeutig() {
+        String pasta = service.createDish("felix", pasta()).dishes().get(0).id();
+        assertStatus(HttpStatus.CONFLICT, () -> service.createDish("joana", new DishRequest("  pasta  MIT feta ", List.of())));
+        String curry = service.createDish("felix", new DishRequest("Curry", List.of())).dishes().stream()
+                .filter(d -> d.name().equals("Curry")).findFirst().orElseThrow().id();
+        assertStatus(HttpStatus.CONFLICT, () -> service.updateDish("felix", curry, new DishRequest("Pasta mit Feta", List.of())));
+        // Die eigene Schreibweise aendern ist kein Umbenennen auf einen vergebenen Namen.
+        service.updateDish("felix", pasta, new DishRequest("PASTA mit Feta", List.of()));
+        assertEquals(2, stored.get().dishes().size());
+
+        // Zwei gleichnamige von frueher lassen sich weiter bearbeiten.
+        Instant then = NOW.minus(Duration.ofDays(30));
+        stored.set(new ShoppingData(List.of(), List.of(
+                new Dish("a", "Suppe", List.of(), then), new Dish("b", "Suppe", List.of(), then)), List.of(), Map.of()));
+        service.updateDish("felix", "a", new DishRequest("Suppe", List.of(new DishRequest.IngredientRequest("Lauch", "1 Stange"))));
+        assertEquals(1, stored.get().dishes().get(0).ingredients().size());
+    }
+
+    @Test
+    void naehrwerteBrauchenDasGewichtUndMuessenInDenKalorienzaehlerPassen() {
+        List<DishRequest.IngredientRequest> zutaten = List.of(zutat("Penne", "250 g", null));
+        DishRequest.NutritionRequest ok = new DishRequest.NutritionRequest(640.0, 24.0, 78.0, 24.0);
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, 2, null, null, ok, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, 2, null, null,
+                new DishRequest.NutritionRequest(640.0, null, 78.0, 24.0), 420.0)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, 2, null, null,
+                new DishRequest.NutritionRequest(640.0, -1.0, 78.0, 24.0), 420.0)));
+        // 640 kcal in 50 g waeren 1280 kcal je 100 g - das nimmt der Kalorienzaehler nicht.
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, 2, null, null, ok, 50.0)));
+        assertTrue(stored.get().dishes().isEmpty());
+        // Das Gewicht allein ist in Ordnung.
+        service.createDish("felix", new DishRequest("A", zutaten, 2, null, null, null, 420.0));
+        assertEquals(420.0, onlyDish().gramsPerPortion());
+        assertTrue(ShoppingService.fitsFood(new Nutrition(1000.0, 100.0, 100.0, 100.0), 100));
+        assertFalse(ShoppingService.fitsFood(new Nutrition(640.0, 24.0, 78.0, 51.0), 50));
+    }
+
+    @Test
+    void dieGrenzenEinesRezepts() {
+        List<DishRequest.IngredientRequest> zutaten = List.of(zutat("Penne", "250 g", null));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, 100, null, null, null, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, -1, null, null, null, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, null, 1441, null, null, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, null, null, null, null, 5001.0)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, null, null, null, null, 0.5)));
+        List<String> zuViele = new ArrayList<>();
+        for (int i = 0; i <= ShoppingService.MAX_STEPS; i++) {
+            zuViele.add("Schritt " + i);
+        }
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, null, null, zuViele, null, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", zutaten, null, null,
+                List.of("x".repeat(ShoppingService.MAX_STEP + 1)), null, null)));
+        List<DishRequest.IngredientRequest> viele = new ArrayList<>();
+        for (int i = 0; i <= ShoppingService.MAX_INGREDIENTS; i++) {
+            viele.add(zutat("Zutat " + i, null, null));
+        }
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.createDish("felix", new DishRequest("A", viele)));
+        assertTrue(stored.get().dishes().isEmpty());
+        // Genau an der Grenze geht es.
+        service.createDish("felix", new DishRequest("A", viele.subList(0, ShoppingService.MAX_INGREDIENTS), 99, 1440,
+                zuViele.subList(0, ShoppingService.MAX_STEPS), null, 5000.0));
+        assertEquals(99, onlyDish().portions());
+    }
+
+    /** Das Rezept fuer vier statt zwei: doppelte Mengen, der Vorrat bleibt zu Hause. */
+    @Test
+    void aufDieListeFuerEineAnderePortionenzahl() {
+        String id = service.createDish("felix", pasta()).dishes().get(0).id();
+        service.createItem("joana", new ItemRequest("penne", "100 g", null, null));
+
+        Board board = service.addDish("felix", id, new DishAddRequest(
+                List.of(new DishAddRequest.Entry("Feta", A), new DishAddRequest.Entry("penne", B)),
+                4, List.of("olivenöl", "  SALZ ")));
+        assertEquals(2, board.items().size());
+        assertEquals("600 g", item(board, "penne").quantity(), "500 g zu den 100 g, die schon draufstanden");
+        assertEquals("Pasta mit Feta", item(board, "penne").note());
+        assertEquals("2 Pck", item(board, "Feta").quantity());
+        assertEquals(A, item(board, "Feta").id());
+
+        // Nachgesendet: nichts doppelt.
+        board = service.addDish("felix", id, new DishAddRequest(
+                List.of(new DishAddRequest.Entry("Feta", A), new DishAddRequest.Entry("penne", B)),
+                4, List.of("olivenöl", "salz")));
+        assertEquals("600 g", item(board, "penne").quantity());
+        // Die Kennung der Penne trifft den zusammengefassten Eintrag.
+        assertNotNull(item(service.check("felix", B), "penne").checkedAt());
+
+        // Fuer eine Portion: halbe Mengen, und was keine Menge hat, kommt ohne.
+        board = service.addDish("joana", id, new DishAddRequest(null, 1, List.of("Feta", "Penne")));
+        assertEquals("1 EL", item(board, "Olivenöl").quantity());
+        assertNull(item(board, "Salz").quantity());
+    }
+
+    @Test
+    void ohnePortionenBleibenDieMengenWieGespeichert() {
+        String id = service.createDish("felix", pasta()).dishes().get(0).id();
+        Board board = service.addDish("felix", id);
+        assertEquals(4, board.items().size(), "auch der Vorrat - ohne Rumpf alles wie vor den Rezepten");
+        assertEquals("250 g", item(board, "Penne").quantity());
+        board = service.addDish("felix", id, new DishAddRequest(null, null, List.of("Penne")));
+        assertEquals("250 g", item(board, "Penne").quantity(), "abgewaehlt");
+        assertEquals("2 Pck", item(board, "Feta").quantity());
+    }
+
+    @Test
+    void umrechnenBrauchtDiePortionenDesRezepts() {
+        String ohne = service.createDish("felix", new DishRequest("Suppe", List.of(
+                new DishRequest.IngredientRequest("Lauch", "1 Stange")))).dishes().get(0).id();
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.addDish("felix", ohne, new DishAddRequest(null, 4, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.scaled(ohne, 4));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.scaled(ohne, null));
+        assertTrue(stored.get().items().isEmpty());
+
+        String mit = service.createDish("felix", pasta()).dishes().stream()
+                .filter(d -> d.name().startsWith("Pasta")).findFirst().orElseThrow().id();
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.addDish("felix", mit, new DishAddRequest(null, 0, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.addDish("felix", mit, new DishAddRequest(null, 100, null)));
+        assertStatus(HttpStatus.BAD_REQUEST, () -> service.scaled(mit, 0));
+        assertStatus(HttpStatus.NOT_FOUND, () -> service.scaled("gibt-es-nicht", 2));
+        assertStatus(HttpStatus.NOT_FOUND, () -> service.dish("gibt-es-nicht"));
+    }
+
+    @Test
+    void dieZutatenFuerEineAnderePortionenzahl() {
+        String id = service.createDish("felix", new DishRequest("Pasta",
+                List.of(zutat("Penne", "250 g", false), zutat("Olivenöl", "2 EL", true),
+                        zutat("Basilikum", "eine Handvoll", false), zutat("Salz", null, true)),
+                2, null, null, null, null)).dishes().get(0).id();
+
+        ScaledDish scaled = service.scaled(id, 3);
+        assertEquals(id, scaled.dishId());
+        assertEquals(3, scaled.portions());
+        assertEquals(2, scaled.basePortions());
+        assertEquals(List.of(
+                new ScaledDish.ScaledIngredient("Penne", "375 g", false, true),
+                new ScaledDish.ScaledIngredient("Olivenöl", "3 EL", true, true),
+                new ScaledDish.ScaledIngredient("Basilikum", "eine Handvoll", false, false),
+                new ScaledDish.ScaledIngredient("Salz", null, true, true)), scaled.ingredients());
+
+        // Ohne Angabe die Portionen des Rezepts - dann ist auch die Handvoll richtig.
+        ScaledDish base = service.scaled(id, null);
+        assertEquals(2, base.portions());
+        assertEquals(new ScaledDish.ScaledIngredient("Basilikum", "eine Handvoll", false, true), base.ingredients().get(2));
+        assertTrue(stored.get().items().isEmpty(), "rechnen aendert nichts");
+    }
+
+    @Test
+    void allesAbgewaehltLegtNichtsAn() {
+        String id = service.createDish("felix", pasta()).dishes().get(0).id();
+        Board board = service.addDish("felix", id, new DishAddRequest(null, 2, List.of("Penne", "Feta", "Olivenöl", "Salz")));
+        assertTrue(board.items().isEmpty());
     }
 }

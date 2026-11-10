@@ -1,0 +1,112 @@
+{
+  "items" : [ {
+    "id" : "42e4140b-2cc5-4bb0-b60c-caef92060b8f",
+    "name" : "Milch",
+    "quantity" : "2 l",
+    "note" : null,
+    "category" : "dairy",
+    "addedAt" : "2026-11-10T11:43:04.394410Z",
+    "addedBy" : "felix",
+    "checkedAt" : "2026-11-10T11:43:04.661326Z",
+    "checkedBy" : "joana",
+    "dishId" : null,
+    "ruleId" : null
+  }, {
+    "id" : "1a2b3c4d-0000-4000-8000-00000000000a",
+    "name" : "Brot",
+    "quantity" : null,
+    "note" : null,
+    "category" : "bakery",
+    "addedAt" : "2026-11-10T11:43:04.512375Z",
+    "addedBy" : "felix",
+    "checkedAt" : null,
+    "checkedBy" : null,
+    "dishId" : null,
+    "ruleId" : null
+  }, {
+    "id" : "199aa76a-b3ce-4376-b6b1-b72c29ceab36",
+    "name" : "Kokosmilch",
+    "quantity" : null,
+    "note" : "für Curry",
+    "category" : "dairy",
+    "addedAt" : "2026-11-10T11:43:04.534295Z",
+    "addedBy" : "felix",
+    "checkedAt" : null,
+    "checkedBy" : null,
+    "dishId" : null,
+    "ruleId" : null
+  }, {
+    "id" : "fb01d081-6daa-4abb-923a-9265918d2b4d",
+    "name" : "Hackfleisch",
+    "quantity" : "500 g",
+    "note" : "Bolognese",
+    "category" : "meat",
+    "addedAt" : "2026-11-10T11:43:04.630324Z",
+    "addedBy" : "felix",
+    "checkedAt" : null,
+    "checkedBy" : null,
+    "dishId" : "98433815-f944-4baf-86a8-d05431332036",
+    "ruleId" : null
+  }, {
+    "id" : "6fb6256b-4e62-4651-a4fc-f92f76698c90",
+    "name" : "Zwiebeln",
+    "quantity" : "2 Stk",
+    "note" : "Bolognese",
+    "category" : "produce",
+    "addedAt" : "2026-11-10T11:43:04.630324Z",
+    "addedBy" : "felix",
+    "checkedAt" : null,
+    "checkedBy" : null,
+    "dishId" : "98433815-f944-4baf-86a8-d05431332036",
+    "ruleId" : null
+  }, {
+    "id" : "3420fcbe-b837-445e-8804-76ac2759e431",
+    "name" : "Salz",
+    "quantity" : null,
+    "note" : "Bolognese",
+    "category" : "spices",
+    "addedAt" : "2026-11-10T11:43:04.630324Z",
+    "addedBy" : "felix",
+    "checkedAt" : null,
+    "checkedBy" : null,
+    "dishId" : "98433815-f944-4baf-86a8-d05431332036",
+    "ruleId" : null
+  } ],
+  "dishes" : [ {
+    "id" : "98433815-f944-4baf-86a8-d05431332036",
+    "name" : "Bolognese",
+    "ingredients" : [ {
+      "name" : "Hackfleisch",
+      "quantity" : "500 g"
+    }, {
+      "name" : "Zwiebeln",
+      "quantity" : "2 Stk"
+    }, {
+      "name" : "Salz",
+      "quantity" : null
+    } ],
+    "createdAt" : "2026-11-10T11:43:04.550519Z"
+  }, {
+    "id" : "dc702448-ba20-4ec5-854c-7fe306777b5f",
+    "name" : "Wasser",
+    "ingredients" : [ ],
+    "createdAt" : "2026-11-10T11:43:04.568595Z"
+  } ],
+  "recurring" : [ {
+    "id" : "b6d21559-cdfa-480e-bb61-530e915d2490",
+    "name" : "Klopapier",
+    "quantity" : "1 Pck",
+    "everyDays" : 14,
+    "nextAt" : "2026-12-01",
+    "createdAt" : "2026-11-10T11:43:04.581431Z"
+  } ],
+  "learned" : {
+    "kokosmilch" : "dairy"
+  },
+  "clientIds" : {
+    "1a2b3c4d-0000-4000-8000-00000000000a" : {
+      "itemId" : "1a2b3c4d-0000-4000-8000-00000000000a",
+      "at" : "2026-11-10T11:43:04.512391Z"
+    }
+  }
+}

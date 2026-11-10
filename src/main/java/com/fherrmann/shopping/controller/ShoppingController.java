@@ -2,10 +2,13 @@ package com.fherrmann.shopping.controller;
 
 import com.fherrmann.shopping.dto.Board;
 import com.fherrmann.shopping.dto.ClearCheckedRequest;
+import com.fherrmann.shopping.dto.CookResult;
 import com.fherrmann.shopping.dto.DishAddRequest;
 import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.dto.ItemRequest;
 import com.fherrmann.shopping.dto.RecurringRequest;
+import com.fherrmann.shopping.dto.ScaledDish;
+import com.fherrmann.shopping.healthy.CookService;
 import com.fherrmann.shopping.service.ShoppingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,23 +19,30 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.Principal;
 
 /**
- * Jede Antwort ist das ganze Brett ({@link Board}); die Clients setzen nichts
- * zusammen. {@code me} ist der Name hinter dem Token - er steht als Urheber
- * an allem, was hier angelegt oder abgehakt wird.
+ * Jede Antwort, die etwas aendert, ist das ganze Brett ({@link Board}); die Clients
+ * setzen nichts zusammen. {@code me} ist der Name hinter dem Token - er steht als
+ * Urheber an allem, was hier angelegt oder abgehakt wird.
+ *
+ * <p>Zwei Ausnahmen, die nichts an Liste und Rezepten aendern: die umgerechneten
+ * Zutaten ({@link ScaledDish}) und das Ergebnis von "Kochen" ({@link CookResult}).
+ * Der Rezept-Chat hat seinen eigenen Controller.
  */
 @RestController
 @RequestMapping("/api")
 public class ShoppingController {
 
     private final ShoppingService service;
+    private final CookService cookService;
 
-    public ShoppingController(ShoppingService service) {
+    public ShoppingController(ShoppingService service, CookService cookService) {
         this.service = service;
+        this.cookService = cookService;
     }
 
     @GetMapping("/board")
@@ -73,7 +83,7 @@ public class ShoppingController {
         return service.clearChecked(me.getName(), request);
     }
 
-    // MARK: - Gerichte
+    // MARK: - Rezepte (im Pfad weiter "dishes" - aeltere Apps rufen genau das)
 
     @PostMapping("/dishes")
     public ResponseEntity<Board> createDish(Principal me, @RequestBody DishRequest request) {
@@ -90,11 +100,30 @@ public class ShoppingController {
         return service.deleteDish(me.getName(), id);
     }
 
-    /** Das Gericht als Ganzes auf die Liste - je Zutat ein Eintrag. */
+    /**
+     * Das Rezept als Ganzes auf die Liste - je Zutat ein Eintrag. Mit {@code portions}
+     * umgerechnet, mit {@code skip} ohne die genannten Zutaten.
+     */
     @PostMapping("/dishes/{id}/add")
     public ResponseEntity<Board> addDish(Principal me, @PathVariable String id,
                                          @RequestBody(required = false) DishAddRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.addDish(me.getName(), id, request));
+    }
+
+    /** Die Zutaten fuer eine andere Portionenzahl - ohne {@code portions} die des Rezepts. */
+    @GetMapping("/dishes/{id}/scaled")
+    public ScaledDish scaled(@PathVariable String id, @RequestParam(required = false) Integer portions) {
+        return service.scaled(id, portions);
+    }
+
+    /**
+     * "Kochen": legt das Rezept im Kalorienzaehler als Gericht an, bei allen mit
+     * Healthy-Zugang. Immer 200 - die Antwort sagt je Person, was daraus wurde. Ein
+     * Rumpf wird nicht gebraucht und nicht gelesen.
+     */
+    @PostMapping("/dishes/{id}/cook")
+    public CookResult cook(Principal me, @PathVariable String id) {
+        return cookService.cook(me.getName(), id);
     }
 
     // MARK: - Regeln

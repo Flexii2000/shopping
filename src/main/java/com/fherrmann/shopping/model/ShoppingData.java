@@ -4,11 +4,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Alles, was in {@code shopping.json} steht.
+ * Alles, was in {@code shopping.json} steht. {@code dishes} sind die Rezepte - der
+ * Schluessel heisst weiter so, damit die Datei von gestern sich liest.
  *
  * @param learned   von Hand gewaehlte Kategorien, je normalisiertem Namen -
  *                  was einmal "Kokosmilch = Vorrat" war, bleibt es, auch ueber
- *                  Gerichte und Regeln
+ *                  Rezepte und Regeln
  * @param clientIds Kennungen, die eine App fuer neue Eintraege vergeben hat, und
  *                  der Eintrag, der daraus wurde (seit 12.10.) - in aelteren
  *                  Dateien fehlt das Feld

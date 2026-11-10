@@ -9,3 +9,4 @@ out/
 
 # Live-Daten: entsteht zur Laufzeit, gehoert nicht ins Repo.
 data/shopping.json
+data/recipe-chat.json
