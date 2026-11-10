@@ -36,10 +36,12 @@
     </section>
 
     <section class="card">
-      <h2>Gerichte <span class="count" id="dish-count"></span>
-        <span class="tools"><button class="x" id="new-dish" type="button">+ Gericht</button></span>
+      <h2>Rezepte <span class="count" id="dish-count"></span>
+        <span class="tools">
+          <button class="x" id="open-chat" type="button" hidden>Chat</button>
+          <button class="x" id="new-dish" type="button">+ Rezept</button>
+        </span>
       </h2>
-      <p class="hint">Ein Gericht kommt als Ganzes auf die Liste – je Zutat ein Eintrag.</p>
       <div class="tiles" id="dishes"></div>
       <div id="dish-editor"></div>
     </section>
@@ -53,6 +55,8 @@
       <div id="rule-editor"></div>
     </section>
   </main>
+  <!-- Ein Rezept, der Chat oder die Kochansicht - anstelle des Bretts, je nach #-Teil der Adresse. -->
+  <section class="card view" id="view" hidden></section>
 </div>
 <script src="app.js"></script>
 </body>
