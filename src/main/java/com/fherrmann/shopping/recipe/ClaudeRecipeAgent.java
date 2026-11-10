@@ -43,7 +43,8 @@ import java.util.regex.Pattern;
  * <p>Der Auftrag geht ueber die Standardeingabe: er enthaelt, was Menschen getippt
  * haben, so gibt es nichts zu escapen und keine Laengengrenze einer Kommandozeile.
  * Alles, was von Menschen oder aus frueheren Antworten stammt, steht in Klammern
- * ({@code <rezepte>}, {@code <verlauf>}, {@code <entwurf>}, {@code <anfrage>}), die
+ * ({@code <rezepte>}, {@code <verlauf>}, {@code <entwurf>}, {@code <ernaehrung>},
+ * {@code <anfrage>}), die
  * der Text selbst nicht schliessen kann - die {@code CLAUDE.md} des Agenten nennt
  * sie Zitat, nie Anweisung.
  *
@@ -60,7 +61,8 @@ public class ClaudeRecipeAgent implements RecipeAgent {
 
     /** So viele Nachrichten des Gespraechs gehen mit - mehr braucht kein "mach es vegetarisch". */
     static final int HISTORY = 12;
-    static final int MAX_REPLY = 600;
+    /** Eine Antwort auf "Wie passt das zu meinen Zielen?" braucht ein paar Zahlen mehr. */
+    static final int MAX_REPLY = 900;
     static final int MAX_NAMES = 200;
     static final int MAX_QUANTITY = 40;
 
@@ -68,7 +70,7 @@ public class ClaudeRecipeAgent implements RecipeAgent {
     private static final Duration PROBE_RETRY = Duration.ofMinutes(5);
 
     /** Kein Text von aussen soll eine der Klammern schliessen oder eine neue oeffnen koennen. */
-    private static final Pattern TAG = Pattern.compile("(?i)<\\s*(/?)\\s*(rezepte|verlauf|entwurf|anfrage)\\s*>");
+    private static final Pattern TAG = Pattern.compile("(?i)<\\s*(/?)\\s*(rezepte|verlauf|entwurf|ernaehrung|anfrage)\\s*>");
 
     private static final Pattern FRACTION = Pattern.compile("(?:(\\d+)\\s+)?(\\d+)\\s*/\\s*(\\d+)");
     /** "1. ", "2) ", "Schritt 3: ", "- " vor einem Schritt - die Oberflaechen zaehlen selbst. */
@@ -184,12 +186,12 @@ public class ClaudeRecipeAgent implements RecipeAgent {
     }
 
     @Override
-    public RecipeAnswer answer(List<String> recipeNames, List<ChatMessage> history, String text) {
+    public RecipeAnswer answer(List<String> recipeNames, List<ChatMessage> history, String text, String nutrition) {
         if (!isAvailable()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Der Rezept-Chat ist auf diesem Server nicht eingerichtet.");
         }
-        return parse(run(prompt(recipeNames, history, text)));
+        return parse(run(prompt(recipeNames, history, text, nutrition)));
     }
 
     // MARK: - Der Auftrag
@@ -197,9 +199,15 @@ public class ClaudeRecipeAgent implements RecipeAgent {
     /**
      * Der veraenderliche Teil des Auftrags. Was immer gilt, steht in der
      * {@code CLAUDE.md} des Agent-Verzeichnisses. Keine Namen von Personen - wer fragt,
-     * tut fuer ein Rezept nichts zur Sache.
+     * tut fuer ein Rezept nichts zur Sache. Ziele und Essen ({@code <ernaehrung>}) sind
+     * die der fragenden Person und nur ihre: der Auftrag jeder Session entsteht neu, und
+     * das Gespraech davor ist ebenfalls nur ihres.
      */
     String prompt(List<String> recipeNames, List<ChatMessage> history, String text) {
+        return prompt(recipeNames, history, text, null);
+    }
+
+    String prompt(List<String> recipeNames, List<ChatMessage> history, String text, String nutrition) {
         StringBuilder out = new StringBuilder();
         out.append("<rezepte>\n");
         int count = 0;
@@ -230,6 +238,10 @@ public class ClaudeRecipeAgent implements RecipeAgent {
         // jeder weitere kostete nur Platz.
         if (latest != null) {
             out.append("<entwurf>\n").append(quote(objectMapper.writeValueAsString(latest))).append("\n</entwurf>\n\n");
+        }
+
+        if (nutrition != null && !nutrition.isBlank()) {
+            out.append("<ernaehrung>\n").append(quote(nutrition.strip())).append("\n</ernaehrung>\n\n");
         }
 
         // Die neue Nachricht kommt zuletzt und klar abgegrenzt: alles dazwischen ist Zitat.

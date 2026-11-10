@@ -2,6 +2,9 @@ package com.fherrmann.shopping.recipe;
 
 import com.fherrmann.shopping.dto.Board;
 import com.fherrmann.shopping.dto.DishRequest;
+import com.fherrmann.shopping.healthy.Healthy;
+import com.fherrmann.shopping.healthy.HealthyDish;
+import com.fherrmann.shopping.healthy.HealthyException;
 import com.fherrmann.shopping.model.Dish;
 import com.fherrmann.shopping.model.Ingredient;
 import com.fherrmann.shopping.model.Nutrition;
@@ -26,6 +29,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +54,7 @@ class RecipeChatJobsTest {
     Path dir;
 
     private final CountDownLatch release = new CountDownLatch(1);
+    private final FakeHealthy healthy = new FakeHealthy();
     private FakeAgent agent;
     private RecipeChatRepository repository;
     private ShoppingService shopping;
@@ -76,7 +82,7 @@ class RecipeChatJobsTest {
 
     private RecipeChatJobs jobs(int dailyLimit) {
         TokenRegistry registry = new TokenRegistry("felix:token-felix-1,joana:token-joana-2,gast:token-gast-3");
-        RecipeChatJobs created = new RecipeChatJobs(agent, new RecipeChatAccess(registry, "felix,joana"),
+        RecipeChatJobs created = new RecipeChatJobs(agent, healthy, new RecipeChatAccess(registry, "felix,joana"),
                 repository, shopping, CLOCK, dailyLimit);
         started.add(created);
         return created;
@@ -87,6 +93,7 @@ class RecipeChatJobsTest {
         final List<String> calls = new CopyOnWriteArrayList<>();
         final List<List<String>> names = new CopyOnWriteArrayList<>();
         final List<List<ChatMessage>> histories = new CopyOnWriteArrayList<>();
+        final List<Optional<String>> nutrition = new CopyOnWriteArrayList<>();
         volatile boolean available = true;
         volatile boolean waitForRelease;
         volatile Supplier<RecipeAnswer> answer = () -> new RecipeAnswer("Wie wäre es damit?", DRAFT);
@@ -97,10 +104,11 @@ class RecipeChatJobsTest {
         }
 
         @Override
-        public RecipeAnswer answer(List<String> recipeNames, List<ChatMessage> history, String text) {
+        public RecipeAnswer answer(List<String> recipeNames, List<ChatMessage> history, String text, String context) {
             calls.add(text);
             names.add(recipeNames);
             histories.add(history);
+            nutrition.add(Optional.ofNullable(context));
             if (waitForRelease) {
                 try {
                     release.await(5, TimeUnit.SECONDS);
@@ -109,6 +117,30 @@ class RecipeChatJobsTest {
                 }
             }
             return answer.get();
+        }
+    }
+
+    /** Ein Kalorienzaehler, der je Person einen erkennbaren Zusammenhang liefert. */
+    private static final class FakeHealthy implements Healthy {
+        volatile boolean configured = true;
+        volatile Function<String, Optional<String>> context =
+                person -> Optional.of("{\"targets\":{\"kcal\":" + (person.equals("joana") ? 1800 : 2300) + "}}");
+        final List<String> asked = new CopyOnWriteArrayList<>();
+
+        @Override
+        public boolean isConfigured() {
+            return configured;
+        }
+
+        @Override
+        public List<Outcome> writeDish(List<String> persons, HealthyDish dish) {
+            throw new AssertionError("Der Chat kocht nicht");
+        }
+
+        @Override
+        public Optional<String> context(String person) {
+            asked.add(person);
+            return context.apply(person);
         }
     }
 
@@ -160,6 +192,40 @@ class RecipeChatJobsTest {
         assertThat(agent.histories.get(0)).isEmpty();
         // Das Gespraech der anderen Person bleibt leer.
         assertThat(jobs.view("joana").messages()).isEmpty();
+    }
+
+    /**
+     * Ziele und Essen gehen je Person mit: Joanas Frage bekommt nur Joanas Zusammenhang,
+     * Felix' nur seinen - der Kalorienzaehler wird nur nach der Person gefragt, die schreibt.
+     */
+    @Test
+    void jedeFrageBekommtNurDenZusammenhangDerFragendenPerson() throws Exception {
+        jobs.send("joana", "Wie passt das zu meinen Zielen?", A);
+        awaitIdle(jobs, "joana");
+        jobs.send("felix", "Wie passt das zu meinen Zielen?", B);
+        awaitIdle(jobs, "felix");
+
+        assertThat(healthy.asked).containsExactly("joana", "felix");
+        assertThat(agent.nutrition).containsExactly(
+                Optional.of("{\"targets\":{\"kcal\":1800}}"),
+                Optional.of("{\"targets\":{\"kcal\":2300}}"));
+    }
+
+    /** Ohne Healthy oder wenn der Kalorienzaehler ausfaellt: die Antwort kommt trotzdem, nur ohne Zusammenhang. */
+    @Test
+    void ohneHealthyAntwortetDerChatTrotzdem() throws Exception {
+        healthy.context = person -> {
+            throw new HealthyException("Kalorienzähler nicht erreichbar.");
+        };
+        jobs.send("felix", "Etwas mit Pasta", A);
+        assertThat(awaitIdle(jobs, "felix").messages()).hasSize(2);
+
+        healthy.configured = false;
+        jobs.send("felix", "und schneller?", B);
+        assertThat(awaitIdle(jobs, "felix").messages()).hasSize(4);
+
+        assertThat(agent.nutrition).containsExactly(Optional.empty(), Optional.empty());
+        assertThat(healthy.asked).containsExactly("felix");
     }
 
     @Test

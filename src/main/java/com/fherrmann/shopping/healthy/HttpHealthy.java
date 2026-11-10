@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Der Kalorienzaehler ueber seinen internen Endpunkt
@@ -38,7 +39,11 @@ public class HttpHealthy implements Healthy {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
+    /** Mehr ist kein Zusammenhang fuer einen Chat - der Auftrag der Session bleibt klein. */
+    static final int MAX_CONTEXT = 16_000;
+
     private final URI endpoint;
+    private final URI contextEndpoint;
     private final String token;
     private final ObjectMapper objectMapper;
     private final HttpClient http;
@@ -51,7 +56,9 @@ public class HttpHealthy implements Healthy {
     }
 
     HttpHealthy(String baseUrl, String token, ObjectMapper objectMapper, HttpClient http) {
-        this.endpoint = URI.create(baseUrl.strip().replaceAll("/+$", "") + "/api/internal/recipe-dishes");
+        String root = baseUrl.strip().replaceAll("/+$", "");
+        this.endpoint = URI.create(root + "/api/internal/recipe-dishes");
+        this.contextEndpoint = URI.create(root + "/api/internal/recipe-context");
         this.token = token == null ? "" : token.strip();
         this.objectMapper = objectMapper;
         this.http = http;
@@ -82,16 +89,7 @@ public class HttpHealthy implements Healthy {
                 .header("Authorization", "Bearer " + token)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
                 .build();
-        HttpResponse<String> response;
-        try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            // Nur die Art des Fehlers, nie die Anfrage: in ihr steckt der Token.
-            throw new HealthyException("Kalorienzähler nicht erreichbar.", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new HealthyException("Abgebrochen.", e);
-        }
+        HttpResponse<String> response = send(request);
         if (response.statusCode() / 100 != 2) {
             throw new HealthyException("Kalorienzähler antwortet mit " + response.statusCode() + ".");
         }
@@ -115,5 +113,57 @@ public class HttpHealthy implements Healthy {
             outcomes.add(new Outcome(person, status, message == null || message.isBlank() ? null : message));
         }
         return outcomes;
+    }
+
+    /**
+     * Fragt genau eine Person ab - die, die im Chat schreibt. Die Antwort geht unveraendert
+     * (nur kompakt neu geschrieben) in deren Auftrag; 404 heisst, sie hat kein Healthy.
+     */
+    @Override
+    public Optional<String> context(String person) {
+        if (!isConfigured() || person == null || person.isBlank()) {
+            return Optional.empty();
+        }
+        HttpRequest request = HttpRequest.newBuilder(contextEndpoint)
+                .timeout(TIMEOUT)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(Map.of("person", person)), StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = send(request);
+        if (response.statusCode() == 404) {
+            return Optional.empty();
+        }
+        if (response.statusCode() / 100 != 2) {
+            throw new HealthyException("Kalorienzähler antwortet mit " + response.statusCode() + ".");
+        }
+        JsonNode context;
+        try {
+            context = objectMapper.readTree(response.body());
+        } catch (JacksonException e) {
+            throw new HealthyException("Kalorienzähler antwortet ohne JSON.", e);
+        }
+        if (context == null || !context.isObject()) {
+            throw new HealthyException("Kalorienzähler antwortet ohne Objekt.");
+        }
+        String compact = objectMapper.writeValueAsString(context);
+        if (compact.length() > MAX_CONTEXT) {
+            throw new HealthyException("Zusammenhang zu groß (" + compact.length() + " Zeichen).");
+        }
+        return Optional.of(compact);
+    }
+
+    private HttpResponse<String> send(HttpRequest request) {
+        try {
+            return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            // Nur die Art des Fehlers, nie die Anfrage: in ihr steckt der Token.
+            throw new HealthyException("Kalorienzähler nicht erreichbar.", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new HealthyException("Abgebrochen.", e);
+        }
     }
 }

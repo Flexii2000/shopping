@@ -210,9 +210,21 @@ Verzeichnisses: `deploy/recipe-agent/` (`CLAUDE.md`, `run-agent.sh`,
   Schnellerfassung des Kalorienzählers.
 - **Der Auftrag** an die Session: die Namen der gespeicherten Rezepte
   (`<rezepte>`), die letzten 12 Nachrichten (`<verlauf>`), der jüngste Entwurf
-  als JSON (`<entwurf>`) und die neue Nachricht (`<anfrage>`). Alles darin ist
+  als JSON (`<entwurf>`), Ziele und Essen der fragenden Person (`<ernaehrung>`,
+  siehe unten) und die neue Nachricht (`<anfrage>`). Alles darin ist
   Zitat; Text, der wie eine dieser Klammern aussieht, wird entschärft
   (`<anfrage>` → `[anfrage]`). Keine Namen von Personen.
+- **Ziele und Essen je Person** (seit 10.11., Felix: „Wie passt das zu meinen
+  Zielen?"): vor jeder Antwort holt der Dienst
+  `POST {FOOD_URL}/api/internal/recipe-context {"person": <wer schreibt>}` mit
+  demselben Dienst-Token wie beim Kochen – Tagesziele samt Eiweiß-Erhalt, heute
+  gegessen und offen, die 14 Tage davor, das Mittel der letzten sieben
+  vollständigen Tage, die häufigsten Einträge (90 Tage), vegan. **Immer nur die
+  Person, die schreibt**: das Gespräch ist je Person, jede Session startet neu
+  ohne Gedächtnis, und der Kalorienzähler gibt je Anfrage genau eine Person
+  heraus (ohne ihren Namen). Joanas Chat sieht nie Felix' Daten und umgekehrt.
+  Ohne Healthy (404) oder wenn der Kalorienzähler ausfällt, fehlt der Block –
+  die Antwort kommt trotzdem.
 - **Die Antwort** ist ein JSON-Objekt `{reply, recipe | null}`; im Rezept kommen
   Zutaten als `amount` + `unit`, wobei `unit` aus der Tabelle von
   `QuantityParser` stammen muss (`RecipeAgentContractTest` hält die Liste in

@@ -1,6 +1,7 @@
 package com.fherrmann.shopping.recipe;
 
 import com.fherrmann.shopping.dto.Board;
+import com.fherrmann.shopping.healthy.Healthy;
 import com.fherrmann.shopping.model.Dish;
 import com.fherrmann.shopping.recipe.ChatView.JobView;
 import com.fherrmann.shopping.recipe.RecipeChatRepository.Conversation;
@@ -58,6 +59,7 @@ public class RecipeChatJobs {
             Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     private final RecipeAgent agent;
+    private final Healthy healthy;
     private final RecipeChatAccess access;
     private final RecipeChatRepository repository;
     private final ShoppingService shopping;
@@ -71,10 +73,11 @@ public class RecipeChatJobs {
     /** Je Person der juengste Auftrag. Nur im Speicher - nach einem Neustart weg. */
     private final Map<String, Job> jobs = new ConcurrentHashMap<>();
 
-    public RecipeChatJobs(RecipeAgent agent, RecipeChatAccess access, RecipeChatRepository repository,
+    public RecipeChatJobs(RecipeAgent agent, Healthy healthy, RecipeChatAccess access, RecipeChatRepository repository,
                           ShoppingService shopping, Clock clock,
                           @Value("${shopping.recipe-agent.daily-limit:40}") int dailyLimit) {
         this.agent = agent;
+        this.healthy = healthy;
         this.access = access;
         this.repository = repository;
         this.shopping = shopping;
@@ -194,7 +197,7 @@ public class RecipeChatJobs {
                 // Die Namen erst jetzt lesen: bis die Warteschlange hier ankommt, kann
                 // ein Rezept dazugekommen sein.
                 List<String> names = shopping.board(me).dishes().stream().map(Dish::name).toList();
-                RecipeAnswer answer = agent.answer(names, before, text);
+                RecipeAnswer answer = agent.answer(names, before, text, nutrition(me));
                 Instant now = clock.instant();
                 ChatMessage reply = new ChatMessage(UUID.randomUUID().toString(), ChatMessage.ASSISTANT,
                         answer.reply(), now, answer.draft(), null);
@@ -210,6 +213,23 @@ public class RecipeChatJobs {
                 job.status = JobView.FAILED;
             }
         });
+    }
+
+    /**
+     * Ziele und Essen genau der Person, die fragt - fuer Fragen wie "Wie passt das zu
+     * meinen Zielen?". Ohne Healthy oder wenn der Kalorienzaehler nicht antwortet, kommt
+     * die Antwort trotzdem, nur ohne diesen Zusammenhang.
+     */
+    private String nutrition(String me) {
+        if (healthy == null || !healthy.isConfigured()) {
+            return null;
+        }
+        try {
+            return healthy.context(me).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("Rezept-Chat: kein Zusammenhang aus Healthy fuer {} ({})", me, e.getMessage());
+            return null;
+        }
     }
 
     /**

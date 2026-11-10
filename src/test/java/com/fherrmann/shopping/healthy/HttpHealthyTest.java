@@ -89,6 +89,36 @@ class HttpHealthyTest {
                 new Healthy.Outcome("gast", "not-linked", null));
     }
 
+    /** Der Zusammenhang fuer den Chat: genau eine Person, mit dem Dienst-Token, kompakt zurueck. */
+    @Test
+    void derZusammenhangWirdFuerGenauEinePersonGeholt() {
+        reply = "{ \"targets\": {\"kcal\": 1800, \"proteinG\": 110},\n \"vegan\": false }";
+
+        assertThat(healthy(base, TOKEN).context("joana"))
+                .contains("{\"targets\":{\"kcal\":1800,\"proteinG\":110},\"vegan\":false}");
+        assertThat(paths).containsExactly("POST /api/internal/recipe-context");
+        assertThat(JSON.readTree(bodies.getFirst()).propertyNames()).containsExactly("person");
+        assertThat(JSON.readTree(bodies.getFirst()).path("person").asString()).isEqualTo("joana");
+    }
+
+    /** 404 heisst: kein Healthy - kein Fehler. Alles andere ohne Objekt ist einer. */
+    @Test
+    void ohneHealthyGibtEsKeinenZusammenhang() {
+        status = 404;
+        assertThat(healthy(base, TOKEN).context("gast")).isEmpty();
+        assertThat(healthy(base, "").context("felix")).isEmpty();
+        status = 200;
+        reply = "[1,2]";
+        assertThatThrownBy(() -> healthy(base, TOKEN).context("felix"))
+                .isInstanceOf(HealthyException.class).hasMessage("Kalorienzähler antwortet ohne Objekt.");
+        reply = "{\"x\":\"" + "a".repeat(HttpHealthy.MAX_CONTEXT) + "\"}";
+        assertThatThrownBy(() -> healthy(base, TOKEN).context("felix"))
+                .isInstanceOf(HealthyException.class).hasMessageStartingWith("Zusammenhang zu groß");
+        status = 500;
+        assertThatThrownBy(() -> healthy(base, TOKEN).context("felix"))
+                .isInstanceOf(HealthyException.class).hasMessage("Kalorienzähler antwortet mit 500.");
+    }
+
     @Test
     void ohneTokenIstDerWegNichtEingerichtet() {
         assertThat(healthy(base, "").isConfigured()).isFalse();
