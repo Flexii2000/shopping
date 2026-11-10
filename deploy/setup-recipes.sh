@@ -148,13 +148,24 @@ step "2/8 sudo-Regel $SUDOERS_TARGET"
 # sudo auf dem ganzen System lahm.
 sudo visudo -c -q -f "$BUILD_DIR/deploy/sudoers-recipe-agent" \
     || fail "sudoers-Regel ist fehlerhaft - nichts installiert."
+# Was visudo am ganzen Baum schon VORHER beanstandet (auf dem Heimserver etwa eine aeltere
+# Datei mit Modus 0640 statt 0440), ist nicht Sache dieses Skripts - am 10.11.2026 hat genau
+# das die neue Regel faelschlich wieder entfernt. Es zaehlt nur, was durch sie neu dazukommt.
+sudoers_complaints() { sudo visudo -c 2>&1 | grep -v 'parsed OK' || true; }
+SUDOERS_BEFORE="$(sudoers_complaints)"
 sudo install -o root -g root -m 440 "$BUILD_DIR/deploy/sudoers-recipe-agent" "$SUDOERS_TARGET"
 # Und das Ganze noch einmal: die neue Datei darf mit keiner vorhandenen kollidieren.
-if ! sudo visudo -c -q; then
+SUDOERS_AFTER="$(sudoers_complaints)"
+if [[ "$SUDOERS_AFTER" != "$SUDOERS_BEFORE" ]]; then
     sudo rm -f "$SUDOERS_TARGET"
+    echo "$SUDOERS_AFTER" | sed 's/^/        /' >&2
     fail "sudoers ist mit der neuen Regel fehlerhaft - $SUDOERS_TARGET wieder entfernt."
 fi
 echo "    $SUDOERS_TARGET installiert."
+if [[ -n "$SUDOERS_BEFORE" ]]; then
+    echo "    Hinweis: visudo -c beanstandet unabhaengig von dieser Regel:"
+    echo "$SUDOERS_BEFORE" | sed 's/^/        /'
+fi
 
 step "3/8 Drop-in $DROPIN"
 # Die Unit selbst bleibt, wie sie ist (deploy/shopping.service steht mit

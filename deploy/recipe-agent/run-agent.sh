@@ -50,9 +50,15 @@ fi
 # abgelehnt statt nachgefragt). Ohne Werkzeuge gibt es ohnehin nichts zu erlauben.
 # --output-format json legt einen Umschlag um die Antwort; der Dienst kommt mit
 # beidem klar.
+# --append-system-prompt-file gibt der Sitzung den Auftrag ausdruecklich mit. Darauf, dass
+# Claude Code die CLAUDE.md des Arbeitsverzeichnisses von selbst laedt, ist hier kein
+# Verlass: steht "Read" auf der deny-Liste (.claude/settings.json), laedt die CLI sie
+# nicht (beobachtet am 10.11.2026 mit 2.1.318 - die Sitzung kannte ihren Auftrag nicht
+# und antwortete, wie es ihr gefiel). Die deny-Liste bleibt, wie sie ist.
 exec claude -p \
     --model "$MODEL" \
     --tools "" \
     --strict-mcp-config \
     --output-format json \
-    --no-session-persistence
+    --no-session-persistence \
+    --append-system-prompt-file "$AGENT_DIR/CLAUDE.md"
