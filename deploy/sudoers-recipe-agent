@@ -1,0 +1,42 @@
+# Erlaubt dem Dienstnutzer der Einkaufsliste genau ein Kommando als flexii: das
+# Wrapper-Skript, das im Rezept-Chat antwortet. Dieselbe Bauart wie 20-food-agent
+# und 21-story-agent beim Kalorienzaehler.
+#
+# Warum das noetig ist: die Claude-Code-Session braucht Binary und Anmeldedaten
+# unter /home/flexii, und das Verzeichnis ist 750 - der Systemnutzer `shopping` kann
+# dort nicht einmal hineinsehen. Die App als flexii laufen zu lassen waere die
+# Alternative gewesen; flexii ist aber in `docker` und `lxd` und damit faktisch
+# root-aequivalent. Eine einzelne, benannte Ausnahme ist das kleinere Uebel.
+#
+# Was ein Angreifer damit NICHT kann: das Skript legt seine Aufrufparameter selbst
+# fest und reicht keine Argumente weiter, kontrolliert wird nur die Standardeingabe -
+# was jemand in den Chat tippt. Die Session hat kein einziges Werkzeug (--tools ""
+# im Skript, dazu die deny-Liste in .claude/settings.json), und das Agent-Verzeichnis
+# gehoert flexii und ist fuer `shopping` nicht beschreibbar.
+#
+# Die Einkaufsliste haengt ohne Privat-Gate am Netz. Wer einen ihrer Token hat, kann
+# also Sessions auf Felix' Claude-Login starten - begrenzt durch die Freigabe je
+# Person (SHOPPING_RECIPE_CHAT), einen Arbeitsthread, eine offene Frage je Person,
+# das Tageslimit und das Zeitlimit der Session.
+#
+# Die Unit braucht dafuer NoNewPrivileges=false (Drop-in
+# /etc/systemd/system/shopping.service.d/10-agent.conf) - sonst unterbindet systemd
+# jede Rechteerweiterung im Dienst, sudo eingeschlossen.
+#
+# Installation ueber deploy/setup-recipes.sh; von Hand:
+#   sudo visudo -c -f deploy/sudoers-recipe-agent   # erst pruefen!
+#   sudo install -o root -g root -m 440 deploy/sudoers-recipe-agent \
+#        /etc/sudoers.d/25-recipe-agent
+
+# Kein Pseudo-Terminal fuer dieses Kommando: Auftrag und Antwort laufen ueber
+# Standardein- und -ausgabe, und ein tty wuerde die Eingabe zurueckspiegeln und
+# Zeilenenden umschreiben. Die globale use_pty-Vorgabe bleibt fuer alles andere.
+Defaults!/home/flexii/services/recipe-agent/run-agent.sh !use_pty
+
+# Das Modell laesst sich ueber RECIPE_AGENT_MODEL in /etc/shopping.env umstellen.
+# sudo setzt die Umgebung sonst zurueck (env_reset), und die Variable kaeme im Skript
+# nie an. Genau diese eine darf durch; das Skript nimmt sie nur in der Form eines
+# Modellnamens an.
+Defaults!/home/flexii/services/recipe-agent/run-agent.sh env_keep += "RECIPE_AGENT_MODEL"
+
+shopping ALL=(flexii) NOPASSWD: /home/flexii/services/recipe-agent/run-agent.sh

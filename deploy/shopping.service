@@ -6,6 +6,10 @@
 #
 # Die Token stehen in /etc/shopping.env (siehe EnvironmentFile), lesbar nur
 # fuer root und den Dienstnutzer - nirgends im Repo.
+#
+# Mit dem Rezept-Chat (deploy/setup-recipes.sh) kommt ein Drop-in dazu:
+#   /etc/systemd/system/shopping.service.d/10-agent.conf  ->  NoNewPrivileges=false
+# Diese Datei bleibt, wie sie ist - das Drop-in nimmt nur die eine Zeile zurueck.
 
 [Unit]
 Description=Einkaufsliste (fherrmann.com/shopping-list)
@@ -23,6 +27,20 @@ Restart=on-failure
 RestartSec=5
 
 # Der Dienst braucht nichts ausser seinem Datenverzeichnis.
+#
+# NoNewPrivileges gilt, solange es keinen Rezept-Chat gibt. Der startet seine
+# Claude-Session ueber `sudo -u flexii`, und systemd wuerde mit dieser Zeile jede
+# Rechteerweiterung im Dienst unterbinden - sudo eingeschlossen. Deshalb setzt
+# setup-recipes.sh ein Drop-in mit NoNewPrivileges=false. Die Ausnahme ist eng
+# gefasst (deploy/sudoers-recipe-agent): genau ein Kommando, genau ein Zielnutzer,
+# feste Aufrufparameter. Wer den Chat nicht braucht, loescht das Drop-in und leert
+# SHOPPING_RECIPE_AGENT_COMMAND in /etc/shopping.env.
+# KEINE Haertung nachtragen, die NoNewPrivileges von selbst wieder einschaltet -
+# laut systemd.exec(5) tun das bei einem Dienst mit User= unter anderem
+# SystemCallFilter, RestrictSUIDSGID, ProtectKernel*, PrivateDevices und
+# LockPersonality. Verlass ist dann nur auf die Probe des Dienstes beim Start
+# (Log: "Rezept-Agent bereit" bzw. "die Probe (--version) endet mit ...") und auf
+# "available" in GET /api/chat.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
