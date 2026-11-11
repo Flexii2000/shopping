@@ -133,7 +133,7 @@ class RecipeChatJobsTest {
         }
 
         @Override
-        public List<Outcome> writeDish(List<String> persons, HealthyDish dish) {
+        public List<Outcome> writeDish(List<String> persons, HealthyDish dish, String previousName) {
             throw new AssertionError("Der Chat kocht nicht");
         }
 

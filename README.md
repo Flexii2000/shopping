@@ -65,13 +65,15 @@ könnte man den Link gar nicht öffnen. Die Seite zeigt dann „Kein Zugang".
   Rezeptvorschlag; „mach es vegetarisch" ändert ihn. Gefällt er, speichert ein
   Tipp ihn unter Rezepte (`source: "chat"`). Je Person ein Gespräch, je Person
   schaltbar, 40 Nachrichten am Tag. Mehr dazu unten („Rezept-Chat").
-- **Kochen.** Wer ein Rezept kocht, bekommt es im Kalorienzähler von Healthy als
-  Gericht – bei **allen**, die die Einkaufsliste benutzen und Healthy haben. Es
-  heißt dort `Rezept: <Name>` (wie die Kantine `Kochwerk: …`): der Kalorienzähler
-  ordnet über den Namen zu, und ein von Hand gepflegtes Gericht gleichen Namens
-  soll nicht überschrieben werden. Werte je 100 g = je Portion × 100 ÷ Gewicht
-  der Portion, die Portion wird die Vorgabe beim Eintragen. Ohne Nährwerte wird
-  nur gekocht. Mehr dazu unten („Kochen und Healthy").
+- **Rezepte in Healthy.** Jedes Rezept mit Nährwerten ist im Kalorienzähler von
+  Healthy ein Gericht – bei **allen**, die die Einkaufsliste benutzen und Healthy
+  haben, und zwar **schon beim Speichern** (seit 11.11.: anlegen, ändern, aus dem
+  Chat übernehmen), nicht erst beim Kochen. Es heißt dort `Rezept: <Name>` (wie die
+  Kantine `Kochwerk: …`): der Kalorienzähler ordnet über den Namen zu, und ein von
+  Hand gepflegtes Gericht gleichen Namens soll nicht überschrieben werden. Werte je
+  100 g = je Portion × 100 ÷ Gewicht der Portion, die Portion wird die Vorgabe beim
+  Eintragen. „Kochen" fragt noch einmal und zeigt das Ergebnis je Person. Ohne
+  Nährwerte gibt es dort nichts. Mehr dazu unten („Rezepte in Healthy").
 - **Derselbe Name wird ein Eintrag** — Groß-/Kleinschreibung und Leerraum
   zählen nicht. Mengen gleicher Einheit werden addiert („500 g" + „500 g" =
   „1000 g"), verschiedene stehen nebeneinander („500 g + 1 Pck"). Ein
@@ -118,7 +120,7 @@ und der Rezept-Chat (`Chat`).
 | DELETE | `/api/dishes/{id}` | löschen, Einträge bleiben |
 | POST | `/api/dishes/{id}/add` | je Zutat ein Eintrag → 201 (400 ohne Zutaten). Ohne Rumpf alles wie immer. Optional `{portions, skip:[Namen], items:[{name, id}]}`: `portions` rechnet um (400, wenn das Rezept keine Portionen hat), `skip` lässt Zutaten weg, `items` trägt die Kennungen der App |
 | GET | `/api/dishes/{id}/scaled?portions=N` | → `Scaled`: die Zutaten für N Portionen (ohne `portions` die des Rezepts); 400 ohne Portionen am Rezept. Ändert nichts |
-| POST | `/api/dishes/{id}/cook` | „Kochen" → 200 `Cook`: das Rezept als Gericht im Kalorienzähler, je Person mit Ergebnis. Kein Rumpf. Auch bei einem Ausfall 200 – kochen kann man trotzdem |
+| POST | `/api/dishes/{id}/cook` | „Kochen" → 200 `Cook`: das Rezept noch einmal als Gericht in den Kalorienzähler (dort steht es seit dem Speichern), je Person mit Ergebnis. Kein Rumpf. Auch bei einem Ausfall 200 – kochen kann man trotzdem |
 | GET | `/api/chat` | → `Chat`: das eigene Gespräch – und die Nachfrage, solange `job.status` `running` ist (alle 2 s) |
 | POST | `/api/chat/messages` | `{text, id?}` → 202 `Chat` mit `job.status: "running"`. 400 leer oder über 1.000 Zeichen, 403 nicht freigeschaltet, 409 solange eine Antwort läuft, 429 Tageslimit, 503 kein Agent. Dieselbe `id` noch einmal hängt nichts an (siehe unten) |
 | DELETE | `/api/chat` | „Neu" → 200 leeres `Chat`; eine Antwort, die noch unterwegs war, wird verworfen |
@@ -249,12 +251,21 @@ Verzeichnisses: `deploy/recipe-agent/` (`CLAUDE.md`, `run-agent.sh`,
   Bedingungen der Unit – `NoNewPrivileges` sperrte sudo dort, ohne dass eine
   Probe von außen es merkte.
 
-## Kochen und Healthy
+## Rezepte in Healthy
 
-`POST /api/dishes/{id}/cook` ruft **einmal** den Kalorienzähler:
+**Wann:** nach jedem Speichern eines Rezepts (`POST /api/dishes`, `PUT /api/dishes/{id}`,
+`POST /api/chat/drafts/{id}/save`) im Hintergrund – das Speichern wartet nicht darauf
+und scheitert nie daran. Dazu einmal nach jedem Start für alle Rezepte (holt nach,
+was beim Speichern nicht ankam; ist der Kalorienzähler nicht da, bricht der Abgleich
+nach dem ersten Versuch ab) und bei „Kochen" (`POST /api/dishes/{id}/cook`, mit
+Antwort je Person). Das Log sagt je Rezept „Rezept in Healthy: …“ und je Start
+„Rezepte mit Healthy abgeglichen: …“.
+
+**Wie:** ein Aufruf beim Kalorienzähler:
 `POST {FOOD_URL}/api/internal/recipe-dishes` mit
-`{"persons":[alle Namen aus SHOPPING_TOKENS],"dish":{"name":"Rezept: …","kcal","proteinG","carbsG","fatG","portionG"}}`
-(Werte je 100 g) und `Authorization: Bearer <SHOPPING_HEALTHY_TOKEN>`. Der
+`{"persons":[alle Namen aus SHOPPING_TOKENS],"dish":{"name":"Rezept: …","kcal","proteinG","carbsG","fatG","portionG"},"previousName":"Rezept: …"}`
+(Werte je 100 g; `previousName` nur nach dem Umbenennen) und
+`Authorization: Bearer <SHOPPING_HEALTHY_TOKEN>`. Der
 Kalorienzähler entscheidet je Name, ob es die Person bei ihm gibt, liest,
 vergleicht und schreibt (`created` / `updated` / `unchanged` / `not-linked` /
 `rejected`). Der Endpunkt ist nur lokal erreichbar (nginx sperrt
@@ -267,10 +278,11 @@ Dieser Token kann genau eines: ein Gericht anlegen. Derselbe Wert steht als
 `FOOD_RECIPE_TOKEN` in `/etc/food.env`; `deploy/setup-recipes.sh` erzeugt ihn.
 
 Was man wissen sollte: Der Kalorienzähler ordnet über den Namen zu. Wird ein
-Rezept umbenannt, entsteht beim nächsten Kochen ein zweites Gericht; das alte
-bleibt (gelöscht wird dort nie etwas). Wer das Gericht `Rezept: …` in Healthy
-von Hand ändert, verliert die Änderung beim nächsten Kochen an die Werte des
-Rezepts.
+Rezept umbenannt, benennt er das Gericht um (`previousName`) – solange es den neuen
+Namen dort noch nicht gibt; ging das Umbenennen beim Speichern verloren, legt der
+Abgleich beim Start ein zweites an. Gelöscht wird dort nie etwas, auch nicht mit dem
+Rezept. Wer das Gericht `Rezept: …` in Healthy von Hand ändert, verliert die Änderung
+beim nächsten Speichern des Rezepts (oder beim nächsten Start) an dessen Werte.
 
 ## Daten
 

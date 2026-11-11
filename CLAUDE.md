@@ -60,7 +60,11 @@ Einkaufsliste-Tab in Fokus und die App Einkaufsliste
   `ClaudeRecipeAgent` (was der Dienst liest). `RecipeAgentContractTest` hält
   Einheiten und Beispiel beieinander. Der Agent bekommt **nie** ein Werkzeug,
   und `run-agent.sh` reicht keine Argumente durch.
-- **Kochen benutzt einen eigenen Dienst-Token** (`SHOPPING_HEALTHY_TOKEN`),
+- **Rezepte gehen schon beim Speichern nach Healthy** (seit 11.11.): `ShoppingService`
+  meldet jedes Anlegen/Ändern als `RecipeSaved`, `CookService` schreibt im
+  Hintergrund (ein Faden, wirft nie) und gleicht beim Start alle ab. Ein neuer Weg
+  zum Speichern muss über `createRecipe`/`updateDish` laufen, sonst fehlt das Ereignis.
+- **Die Übergabe an Healthy benutzt einen eigenen Dienst-Token** (`SHOPPING_HEALTHY_TOKEN`),
   keine persönlichen Healthy-Token — dieser Dienst hängt ohne Privat-Gate am
   Netz. Token nie loggen, nie in Fehlermeldungen.
 - **Die App darf Kennungen vergeben** (`id` beim Anlegen, je Zutat bei

@@ -75,6 +75,7 @@ class HttpHealthyTest {
 
         assertThat(paths).containsExactly("POST /api/internal/recipe-dishes");
         JsonNode body = JSON.readTree(bodies.getFirst());
+        assertThat(body.propertyNames()).containsExactly("persons", "dish");
         assertThat(body.path("persons").size()).isEqualTo(3);
         assertThat(body.path("persons").get(1).asString()).isEqualTo("joana");
         JsonNode dish = body.path("dish");
@@ -87,6 +88,16 @@ class HttpHealthyTest {
                 new Healthy.Outcome("felix", "created", null),
                 new Healthy.Outcome("joana", "rejected", "kcal is too high"),
                 new Healthy.Outcome("gast", "not-linked", null));
+    }
+
+    /** Nach dem Umbenennen kommt der alte Name mit - der Kalorienzaehler benennt dann um. */
+    @Test
+    void nachDemUmbenennenKommtDerAlteNameMit() {
+        healthy(base, TOKEN).writeDish(List.of("felix"), DISH, "Rezept: Feta-Pasta");
+
+        JsonNode body = JSON.readTree(bodies.getFirst());
+        assertThat(body.propertyNames()).containsExactly("persons", "dish", "previousName");
+        assertThat(body.path("previousName").asString()).isEqualTo("Rezept: Feta-Pasta");
     }
 
     /** Der Zusammenhang fuer den Chat: genau eine Person, mit dem Dienst-Token, kompakt zurueck. */

@@ -6,6 +6,7 @@ import com.fherrmann.shopping.dto.DishRequest;
 import com.fherrmann.shopping.repository.ShoppingRepository;
 import com.fherrmann.shopping.security.TokenRegistry;
 import com.fherrmann.shopping.service.Categorizer;
+import com.fherrmann.shopping.service.RecipeSaved;
 import com.fherrmann.shopping.service.ShoppingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,7 @@ class CookServiceTest {
         boolean configured = true;
         final List<List<String>> persons = new ArrayList<>();
         final List<HealthyDish> dishes = new ArrayList<>();
+        final List<String> previousNames = new ArrayList<>();
         BiFunction<List<String>, HealthyDish, List<Outcome>> answer = (persons, dish) -> persons.stream()
                 .map(person -> new Outcome(person, "created", null)).toList();
 
@@ -45,9 +47,10 @@ class CookServiceTest {
         }
 
         @Override
-        public List<Outcome> writeDish(List<String> persons, HealthyDish dish) {
+        public List<Outcome> writeDish(List<String> persons, HealthyDish dish, String previousName) {
             this.persons.add(persons);
             this.dishes.add(dish);
+            this.previousNames.add(previousName);
             return answer.apply(persons, dish);
         }
     }
@@ -121,6 +124,104 @@ class CookServiceTest {
         assertThat(cook.cook("felix", id).healthy()).containsExactly(
                 new PersonResult("felix", "created", null),
                 new PersonResult("joana", "failed", "Keine Antwort vom Kalorienzähler."));
+    }
+
+    /** Einkaufsliste und Uebergabe wie im Dienst verdrahtet - nur ohne Hintergrund-Faden. */
+    private ShoppingService wired() {
+        CookService[] handover = new CookService[1];
+        ShoppingService live = new ShoppingService(
+                new ShoppingRepository(dir.resolve("live.json").toString(), JsonMapper.builder().findAndAddModules().build()),
+                new Categorizer(), Clock.systemUTC(), 90, event -> {
+                    if (event instanceof RecipeSaved saved) {
+                        handover[0].onRecipeSaved(saved);
+                    }
+                });
+        handover[0] = new CookService(live, healthy,
+                new TokenRegistry("felix:token-felix-1,joana:token-joana-2"), Runnable::run);
+        return live;
+    }
+
+    private static DishRequest request(String name, DishRequest.NutritionRequest nutrition, Double grams) {
+        return new DishRequest(name, List.of(new DishRequest.IngredientRequest("Penne", "250 g")),
+                2, 25, List.of("Kochen."), nutrition, grams);
+    }
+
+    /** Gespeichert heisst eintragbar (Felix, 11.11.): ohne "Kochen" steht das Gericht bei beiden. */
+    @Test
+    void einGespeichertesRezeptStehtGleichInHealthy() {
+        ShoppingService live = wired();
+
+        live.createDish("joana", request("Pasta mit Feta", NUTRITION, 420.0));
+
+        assertThat(healthy.persons).containsExactly(List.of("felix", "joana"));
+        assertThat(healthy.dishes).containsExactly(
+                new HealthyDish("Rezept: Pasta mit Feta", 152.38, 5.71, 18.57, 5.71, 420.0));
+        assertThat(healthy.previousNames).containsOnlyNulls();
+
+        // Ohne Naehrwerte gibt es dort nichts einzutragen.
+        live.createDish("felix", request("Suppe", null, null));
+        assertThat(healthy.dishes).hasSize(1);
+    }
+
+    /** Aendern zieht nach; Umbenennen schickt den alten Namen mit, damit dort kein zweites entsteht. */
+    @Test
+    void einGeaendertesRezeptZiehtNachUndUmbenennenNimmtDenAltenNamenMit() {
+        ShoppingService live = wired();
+        live.createDish("felix", request("Pasta mit Feta", NUTRITION, 420.0));
+        String id = live.board("felix").dishes().getFirst().id();
+
+        live.updateDish("felix", id, request("Pasta mit Feta",
+                new DishRequest.NutritionRequest(700.0, 30.0, 80.0, 25.0), 420.0));
+        live.updateDish("felix", id, new DishRequest("Feta-Pasta",
+                List.of(new DishRequest.IngredientRequest("Penne", "250 g")), null, null, null, null, null));
+
+        assertThat(healthy.dishes).extracting(HealthyDish::name)
+                .containsExactly("Rezept: Pasta mit Feta", "Rezept: Pasta mit Feta", "Rezept: Feta-Pasta");
+        assertThat(healthy.dishes.get(1).kcal()).isEqualTo(166.67);
+        assertThat(healthy.dishes.get(2).kcal()).isEqualTo(166.67);
+        assertThat(healthy.previousNames).containsExactly(null, null, "Rezept: Pasta mit Feta");
+    }
+
+    /** Faellt der Kalorienzaehler aus, ist das Rezept trotzdem gespeichert. */
+    @Test
+    void einAusfallHaeltDasSpeichernNichtAuf() {
+        ShoppingService live = wired();
+        healthy.answer = (persons, dish) -> {
+            throw new HealthyException("Kalorienzähler nicht erreichbar.");
+        };
+
+        live.createDish("felix", request("Pasta mit Feta", NUTRITION, 420.0));
+
+        assertThat(live.board("felix").dishes()).extracting(d -> d.name()).containsExactly("Pasta mit Feta");
+        assertThat(healthy.dishes).hasSize(1);
+    }
+
+    /** Beim Start einmal alle mit Naehrwerten - was beim Speichern nicht ankam, kommt so nach. */
+    @Test
+    void derAbgleichBeimStartHoltAlleRezepteMitNaehrwertenNach() {
+        recipe("Pasta mit Feta", NUTRITION, 420.0);
+        recipe("Suppe", null, null);
+        recipe("Curry", new DishRequest.NutritionRequest(500.0, 20.0, 60.0, 18.0), 400.0);
+        cook = new CookService(shopping, healthy, new TokenRegistry("felix:token-felix-1,joana:token-joana-2"),
+                Runnable::run);
+
+        cook.publishAll();
+        assertThat(healthy.dishes).extracting(HealthyDish::name)
+                .containsExactlyInAnyOrder("Rezept: Pasta mit Feta", "Rezept: Curry");
+
+        // Nicht erreichbar: nach dem ersten Versuch ist Schluss, statt je Rezept zu warten.
+        healthy.dishes.clear();
+        healthy.answer = (persons, dish) -> {
+            throw new HealthyException("Kalorienzähler nicht erreichbar.");
+        };
+        cook.publishAll();
+        assertThat(healthy.dishes).hasSize(1);
+
+        // Ohne Token wird nicht gefragt.
+        healthy.dishes.clear();
+        healthy.configured = false;
+        cook.publishAll();
+        assertThat(healthy.dishes).isEmpty();
     }
 
     @Test

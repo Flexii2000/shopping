@@ -5,7 +5,7 @@ import java.util.Optional;
 
 /**
  * Der Kalorienzaehler von Healthy, so weit die Einkaufsliste ihn braucht: ein
- * gekochtes Rezept dort als Gericht anlegen, bei jeder Person, die es dort gibt - und
+ * gespeichertes Rezept dort als Gericht anlegen, bei jeder Person, die es dort gibt - und
  * fuer den Rezept-Chat Ziele und Essen der einen Person holen, die gerade fragt.
  *
  * <p>Eigene Schnittstelle, damit "Kochen" nichts vom HTTP dahinter weiss und Tests
@@ -19,12 +19,20 @@ public interface Healthy {
     /**
      * Legt das Gericht bei den genannten Personen an oder bringt es auf den neuen Stand.
      *
-     * @param persons die Namen aus der Einkaufsliste - wer davon kein Healthy hat, kommt
-     *                als {@code not-linked} zurueck
+     * @param persons      die Namen aus der Einkaufsliste - wer davon kein Healthy hat,
+     *                     kommt als {@code not-linked} zurueck
+     * @param previousName der Name des Gerichts vor dem Umbenennen des Rezepts, sonst
+     *                     {@code null} - dann wird das vorhandene umbenannt statt ein
+     *                     zweites angelegt
      * @throws HealthyException wenn der Kalorienzaehler nicht erreichbar ist oder nicht
      *                          verwertbar antwortet - dann hat niemand das Gericht bekommen
      */
-    List<Outcome> writeDish(List<String> persons, HealthyDish dish);
+    List<Outcome> writeDish(List<String> persons, HealthyDish dish, String previousName);
+
+    /** {@link #writeDish(List, HealthyDish, String)} ohne Umbenennen. */
+    default List<Outcome> writeDish(List<String> persons, HealthyDish dish) {
+        return writeDish(persons, dish, null);
+    }
 
     /**
      * Ziele, heute und die letzten zwei Wochen <b>dieser einen</b> Person als kompaktes

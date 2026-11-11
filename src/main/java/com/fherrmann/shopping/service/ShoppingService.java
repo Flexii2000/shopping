@@ -16,7 +16,9 @@ import com.fherrmann.shopping.model.Nutrition;
 import com.fherrmann.shopping.model.RecurringRule;
 import com.fherrmann.shopping.model.ShoppingData;
 import com.fherrmann.shopping.repository.ShoppingRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -92,13 +94,22 @@ public class ShoppingService {
     private final Categorizer categorizer;
     private final Clock clock;
     private final Duration history;
+    private final ApplicationEventPublisher events;
 
+    @Autowired
     public ShoppingService(ShoppingRepository repository, Categorizer categorizer, Clock clock,
-                           @Value("${shopping.history-days:90}") int historyDays) {
+                           @Value("${shopping.history-days:90}") int historyDays,
+                           ApplicationEventPublisher events) {
         this.repository = repository;
         this.categorizer = categorizer;
         this.clock = clock;
         this.history = Duration.ofDays(historyDays);
+        this.events = events;
+    }
+
+    /** Fuer Tests, die nicht mitlesen, was ein gespeichertes Rezept ausloest. */
+    public ShoppingService(ShoppingRepository repository, Categorizer categorizer, Clock clock, int historyDays) {
+        this(repository, categorizer, clock, historyDays, event -> { });
     }
 
     // MARK: - Das Brett
@@ -400,6 +411,7 @@ public class ShoppingService {
         List<Dish> dishes = new ArrayList<>(data.dishes());
         dishes.add(dish);
         repository.save(data.withDishes(dishes));
+        events.publishEvent(new RecipeSaved(dish.id(), null));
         return dish;
     }
 
@@ -431,7 +443,9 @@ public class ShoppingService {
         requirePlausible(nutrition, grams);
         Dish updated = existing.withContent(name, ingredients(request, existing), portions, minutes, steps,
                 nutrition, grams);
-        return save(data.withDishes(data.dishes().stream().map(d -> d.id().equals(id) ? updated : d).toList()), me);
+        Board board = save(data.withDishes(data.dishes().stream().map(d -> d.id().equals(id) ? updated : d).toList()), me);
+        events.publishEvent(new RecipeSaved(id, existing.name().equals(name) ? null : existing.name()));
+        return board;
     }
 
     /** Loescht das Rezept. Eintraege, die daraus schon auf der Liste stehen, bleiben. */
@@ -444,6 +458,11 @@ public class ShoppingService {
     /** Ein Rezept, wie es gespeichert ist - fuer "Kochen". */
     public Dish dish(String id) {
         return findDish(repository.load(), id);
+    }
+
+    /** Alle Rezepte, wie sie gespeichert sind - fuer den Abgleich mit Healthy beim Start. */
+    public List<Dish> dishes() {
+        return repository.load().dishes();
     }
 
     /**

@@ -70,7 +70,7 @@ public class HttpHealthy implements Healthy {
     }
 
     @Override
-    public List<Outcome> writeDish(List<String> persons, HealthyDish dish) {
+    public List<Outcome> writeDish(List<String> persons, HealthyDish dish, String previousName) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("name", dish.name());
         values.put("kcal", dish.kcal());
@@ -81,6 +81,9 @@ public class HttpHealthy implements Healthy {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("persons", persons);
         body.put("dish", values);
+        if (previousName != null && !previousName.isBlank()) {
+            body.put("previousName", previousName);
+        }
 
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(TIMEOUT)
